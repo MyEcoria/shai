@@ -76,6 +76,15 @@ impl App<'_> {
         let (llm, model) = ShaiConfig::get_llm().await?;
         println!("\x1b[2m{} on {}\x1b[0m", model, llm.provider().name());
         
+        // Check for new version and display banner if available
+        let current_version = env!("CARGO_PKG_VERSION");
+        if let Ok(latest_version) = crate::tui::theme::get_latest_version().await {
+            if current_version != latest_version {
+                let banner = crate::tui::theme::version_banner(current_version, &latest_version);
+                println!("{}", banner);
+            }
+        }
+        
         // Create and start the agent
         let mut agent = coder(Arc::new(llm), model);
         

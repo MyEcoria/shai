@@ -129,3 +129,39 @@ pub fn random_palette() -> String {
     
     result
 }
+
+pub fn version_banner(current_version: &str, latest_version: &str) -> String {
+    let banner = format!(
+        r#"┌────────────────────────────────────────────────────────────┐
+│                  🎉 SHAI UPDATE AVAILABLE 🎉               │
+│                                                            │
+│  Current version: {:<40} │
+│  Latest version:  {:<40} │
+│                                                            │
+│  Run 'shai --update' or download the latest version from   │
+│  https://github.com/ovh/shai                               │
+└────────────────────────────────────────────────────────────┘"#,
+        current_version, latest_version
+    );
+    // Apply yellow color to the banner
+    format!("\x1b[33m{}\x1b[0m", banner)
+}
+
+pub async fn get_latest_version() -> Result<String, Box<dyn std::error::Error>> {
+    let url = "https://raw.githubusercontent.com/ovh/shai/main/shai-cli/Cargo.toml";
+    let response = reqwest::get(url).await?;
+    let content = response.text().await?;
+    
+    // Parse the version from the Cargo.toml content
+    for line in content.lines() {
+        if line.trim_start().starts_with("version") {
+            if let Some(version) = line.split('=').nth(1) {
+                let version = version.trim();
+                let version = version.trim_matches(|c| c == '"' || c == '\'');
+                return Ok(version.to_string());
+            }
+        }
+    }
+    
+    Err("Could not find version in Cargo.toml".into())
+}
