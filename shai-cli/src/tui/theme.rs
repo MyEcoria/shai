@@ -138,8 +138,7 @@ pub fn version_banner(current_version: &str, latest_version: &str) -> String {
 │  Current version: {:<40} │
 │  Latest version:  {:<40} │
 │                                                            │
-│  Run 'shai --update' or download the latest version from   │
-│  https://github.com/ovh/shai                               │
+│  Download the latest version from github.com/ovh/shai      │
 └────────────────────────────────────────────────────────────┘"#,
         current_version, latest_version
     );
