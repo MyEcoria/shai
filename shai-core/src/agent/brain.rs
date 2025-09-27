@@ -27,28 +27,48 @@ pub enum ThinkerFlowControl {
 #[derive(Debug, Clone)]
 pub struct ThinkerDecision {
     pub message: ChatMessage,
-    pub flow:    ThinkerFlowControl
+    pub flow:    ThinkerFlowControl,
+    pub token_usage: Option<(u32, u32)>, // (input_tokens, output_tokens)
 }
 
 impl ThinkerDecision {
     pub fn new(message: ChatMessage) -> Self {
         ThinkerDecision{
             message,
-            flow: ThinkerFlowControl::AgentPause
+            flow: ThinkerFlowControl::AgentPause,
+            token_usage: None,
         }
     }
 
     pub fn agent_continue(message: ChatMessage) -> Self {
         ThinkerDecision{
             message,
-            flow: ThinkerFlowControl::AgentContinue
+            flow: ThinkerFlowControl::AgentContinue,
+            token_usage: None,
         }
     }
 
     pub fn agent_pause(message: ChatMessage) -> Self {
         ThinkerDecision{
             message,
-            flow: ThinkerFlowControl::AgentPause
+            flow: ThinkerFlowControl::AgentPause,
+            token_usage: None,
+        }
+    }
+
+    pub fn agent_continue_with_tokens(message: ChatMessage, input_tokens: u32, output_tokens: u32) -> Self {
+        ThinkerDecision{
+            message,
+            flow: ThinkerFlowControl::AgentContinue,
+            token_usage: Some((input_tokens, output_tokens)),
+        }
+    }
+
+    pub fn agent_pause_with_tokens(message: ChatMessage, input_tokens: u32, output_tokens: u32) -> Self {
+        ThinkerDecision{
+            message,
+            flow: ThinkerFlowControl::AgentPause,
+            token_usage: Some((input_tokens, output_tokens)),
         }
     }
 

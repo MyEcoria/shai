@@ -47,7 +47,7 @@ impl AgentCore {
 
     /// Process a brain task result
     pub async fn process_next_step(&mut self, result: Result<ThinkerDecision, AgentError>) -> Result<(), AgentError> {
-        let ThinkerDecision{message, flow} = self.handle_brain_error(result).await?;
+        let ThinkerDecision{message, flow, token_usage} = self.handle_brain_error(result).await?;
         let ChatMessage::Assistant { content, reasoning_content, tool_calls, .. } = message.clone() else {
             return self.handle_brain_error::<ThinkerDecision>(
                 Err(AgentError::InvalidResponse(format!("ChatMessage::Assistant expected, but got {:?} instead", message)))).await.map(|_| ()
@@ -60,10 +60,18 @@ impl AgentCore {
         trace.write().await.push(message.clone());
         
         // Emit event to external consumers
-        let _ = self.emit_event(AgentEvent::BrainResult { 
+        let _ = self.emit_event(AgentEvent::BrainResult {
             timestamp: Utc::now(),
             thought: Ok(message.clone())
         }).await;
+
+        // Emit token usage event if available
+        if let Some((input_tokens, output_tokens)) = token_usage {
+            let _ = self.emit_event(AgentEvent::TokenUsage {
+                input_tokens,
+                output_tokens
+            }).await;
+        }
     
         // run tool call if any
         let tool_calls_from_brain = tool_calls.unwrap_or(vec![]);

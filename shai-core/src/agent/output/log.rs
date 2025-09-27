@@ -53,6 +53,9 @@ impl FileEventLogger {
             AgentEvent::Completed { success, message } => {
                 format!("Completed: success={} - {}", success, message)
             }
+            AgentEvent::TokenUsage { input_tokens, output_tokens } => {
+                format!("Token Usage: input={} output={} total={}", input_tokens, output_tokens, input_tokens + output_tokens)
+            }
         };
 
         let log_line = format!("[{}] {}\n", timestamp.format("%Y-%m-%d %H:%M:%S%.3f"), event_str);

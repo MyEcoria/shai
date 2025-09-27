@@ -7,8 +7,10 @@ use openai_dive::v1::{
     resources::{
         chat::{ChatCompletionParameters, ChatCompletionResponse, ChatCompletionChunkResponse},
         model::ListModelResponse,
+        shared::Usage,
     },
 };
+use serde_json::Value;
 
 pub struct OpenAICompatibleProvider {
     client: Client,
@@ -42,8 +44,9 @@ impl LlmProvider for OpenAICompatibleProvider {
     }
 
     async fn chat(&self, request: ChatCompletionParameters) -> Result<ChatCompletionResponse, LlmError> {
-        let response = self.client.chat().create(request).await
+        let mut response = self.client.chat().create(request).await
             .map_err(|e| Box::new(e) as LlmError)?;
+
         Ok(response)
     }
 

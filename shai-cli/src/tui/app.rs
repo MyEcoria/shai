@@ -61,7 +61,7 @@ pub struct App<'a> {
 
     pub(crate) agent: Option<AppRunningAgent>,
     pub(crate) custom_agent: Option<Box<dyn Agent>>,
-    
+
     pub(crate) state: AppModalState<'a>,
     pub(crate) formatter: PrettyFormatter, // streaming log formatter
     pub(crate) running_tools: HashMap<String, ToolCall>, // (request_id, request)
@@ -69,6 +69,9 @@ pub struct App<'a> {
     pub(crate) commands: HashMap<(String, String),Vec<String>>,
     pub(crate) exit: bool,
     pub(crate) permission_queue: VecDeque<(String, PermissionRequest)>, // (request_id, request)
+
+    pub(crate) total_input_tokens: u32,
+    pub(crate) total_output_tokens: u32,
 }
 
 
@@ -150,6 +153,12 @@ impl App<'_> {
         if let AgentEvent::PermissionRequired { request_id, request } = &event {
             self.permission_queue.push_back((request_id.clone(), request.clone()));
         }
+
+        // Handle token usage tracking
+        if let AgentEvent::TokenUsage { input_tokens, output_tokens } = &event {
+            self.total_input_tokens += input_tokens;
+            self.total_output_tokens += output_tokens;
+        }
         
         Ok(())
     }
@@ -171,6 +180,8 @@ impl App<'_> {
             exit: false,
             running_tools: HashMap::new(),
             permission_queue: VecDeque::new(),
+            total_input_tokens: 0,
+            total_output_tokens: 0,
         }
     }
 
