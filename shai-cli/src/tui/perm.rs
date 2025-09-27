@@ -1,17 +1,17 @@
 use std::time::Duration;
 
 use ansi_to_tui::IntoText;
-use crossterm::event::{Event, KeyCode, KeyEvent, MouseEvent};
+use crossterm::event::{KeyCode, KeyEvent, MouseEvent};
 use ratatui::{
-    layout::{Constraint, Direction, Layout, Rect}, 
-    style::{Color, Style, Stylize}, 
+    layout::{Constraint, Direction, Layout, Rect},
+    style::{Color, Style, Stylize},
     symbols::border,
-    text::{Line, Span, Text}, 
-    widgets::{Block, Borders, List, ListDirection, ListItem, Padding, Paragraph, Widget}, 
+    text::{Line, Span, Text},
+    widgets::{Block, Borders, List, ListDirection, ListItem, Padding, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, Widget},
     Frame
 };
 use shai_core::{agent::{events::PermissionRequest, output::PrettyFormatter, PermissionResponse}, tools::{ToolCall, ToolResult}};
-use tui_textarea::{Input, TextArea};
+// Removed tui_textarea dependency for colored preview
 
 use super::theme::SHAI_YELLOW;
 
@@ -31,25 +31,27 @@ pub struct PermissionWidget<'a> {
 
     selected_index: usize,
     formatted_request: String,
-    preview: TextArea<'a>
+    preview_text: Text<'a>,
+    scroll_offset: usize,
+    scroll_state: ScrollbarState
 }
 
 impl PermissionWidget<'_> {
     pub fn new(request_id: String, request: PermissionRequest, total: usize) -> Self {
         let formatter = PrettyFormatter::new();
         let formatted_request = formatter.format_toolcall(&request.call, request.preview.as_ref());
-        let mut preview = TextArea::from(formatted_request.into_text().unwrap());
-        preview.set_cursor_line_style(Style::reset());
-        preview.set_cursor_style(Style::reset());
-        
+        let preview_text = formatted_request.into_text().unwrap();
+        let content_length = preview_text.lines.len();
+
         Self {
             request_id,
             request,
             selected_index: 0,
             remaining_perms: total,
-
             formatted_request,
-            preview
+            preview_text,
+            scroll_offset: 0,
+            scroll_state: ScrollbarState::new(content_length)
         }
     }
 
@@ -62,6 +64,19 @@ impl PermissionWidget<'_> {
         self.selected_index = (self.selected_index + 1) % 3;
     }
 
+    pub fn scroll_up(&mut self) {
+        self.scroll_offset = self.scroll_offset.saturating_sub(1);
+        self.scroll_state = self.scroll_state.position(self.scroll_offset);
+    }
+
+    pub fn scroll_down(&mut self) {
+        let max_scroll = self.preview_text.lines.len().saturating_sub(1);
+        if self.scroll_offset < max_scroll {
+            self.scroll_offset += 1;
+            self.scroll_state = self.scroll_state.position(self.scroll_offset);
+        }
+    }
+
     pub fn get_selected(&self) -> PermissionResponse {
         match self.selected_index {
             0 => PermissionResponse::Allow,
@@ -72,9 +87,17 @@ impl PermissionWidget<'_> {
     }
 
     pub async fn handle_mouse_event(&mut self, mouse_event: MouseEvent) ->  PermissionModalAction {
-        let event: Input = Event::Mouse(mouse_event).into();
-        self.preview.input(event);
-        PermissionModalAction::Nope   
+        // Handle mouse scroll in the preview area
+        match mouse_event.kind {
+            crossterm::event::MouseEventKind::ScrollUp => {
+                self.scroll_up();
+            }
+            crossterm::event::MouseEventKind::ScrollDown => {
+                self.scroll_down();
+            }
+            _ => {}
+        }
+        PermissionModalAction::Nope
     }
 
     pub async fn handle_key_event(&mut self, key_event: KeyEvent) ->  PermissionModalAction {
@@ -85,6 +108,20 @@ impl PermissionWidget<'_> {
             }
             KeyCode::Down => {
                 self.move_down();
+                PermissionModalAction::Nope
+            }
+            KeyCode::PageUp => {
+                // Scroll preview up
+                for _ in 0..5 {
+                    self.scroll_up();
+                }
+                PermissionModalAction::Nope
+            }
+            KeyCode::PageDown => {
+                // Scroll preview down
+                for _ in 0..5 {
+                    self.scroll_down();
+                }
                 PermissionModalAction::Nope
             }
             KeyCode::Enter => {
@@ -104,7 +141,7 @@ impl PermissionWidget<'_> {
     pub fn height(&self) -> u16 {
        4 // outer permission block 2 + 1 top padding
        + 2 // inner tool preview block 2 (0 padding)
-       + self.formatted_request.lines().count() as u16  // preview content
+       + self.preview_text.lines.len() as u16  // preview content
        + 4 // allow, yolo, deny + 1 top space
     }
 
@@ -123,7 +160,7 @@ impl PermissionWidget<'_> {
         let inner = block.inner(area);
         f.render_widget(block, area);
 
-        let [tool, modal] = Layout::vertical([Constraint::Length(self.formatted_request.lines().count() as u16 + 2), Constraint::Length(4)]).areas(inner);
+        let [tool, modal] = Layout::vertical([Constraint::Length(self.preview_text.lines.len() as u16 + 2), Constraint::Length(4)]).areas(inner);
 
         let call = self.request.call.clone();
         let tool_name = PrettyFormatter::capitalize_first(&call.tool_name);
@@ -146,7 +183,18 @@ impl PermissionWidget<'_> {
     
         let inner = block.inner(tool);
         f.render_widget(block, tool);
-        f.render_widget(&self.preview, inner);
+
+        // Render scrollable paragraph with colors
+        let paragraph = Paragraph::new(self.preview_text.clone())
+            .scroll((self.scroll_offset as u16, 0));
+        f.render_widget(paragraph, inner);
+
+        // Render scrollbar if content is longer than area
+        if self.preview_text.lines.len() > inner.height as usize {
+            let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
+                .style(Style::default().fg(Color::DarkGray));
+            f.render_stateful_widget(scrollbar, inner, &mut self.scroll_state.clone());
+        }
 
         let items = ["Allow", "Allow all tools and don't ask again for this session", "Deny"];
         let mut lines = vec![Line::from("Do you want to run this tool?")];

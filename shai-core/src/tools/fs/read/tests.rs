@@ -57,6 +57,9 @@ End of file"#;
         },
         crate::tools::ToolResult::Error { error, .. } => {
             panic!("Read tool should succeed, got error: {}", error);
+        },
+        crate::tools::ToolResult::Denied => {
+            panic!("Read tool was denied");
         }
     }
 
@@ -78,6 +81,9 @@ End of file"#;
         },
         crate::tools::ToolResult::Error { error, .. } => {
             panic!("Read tool with line numbers should succeed, got error: {}", error);
+        },
+        crate::tools::ToolResult::Denied => {
+            panic!("Read tool was denied");
         }
     }
 }
@@ -122,6 +128,9 @@ async fn test_read_tool_line_range_reading() {
         },
         crate::tools::ToolResult::Error { error, .. } => {
             panic!("Read tool range should succeed, got error: {}", error);
+        },
+        crate::tools::ToolResult::Denied => {
+            panic!("Read tool was denied");
         }
     }
 
@@ -146,6 +155,9 @@ async fn test_read_tool_line_range_reading() {
         },
         crate::tools::ToolResult::Error { error, .. } => {
             panic!("Read tool from line should succeed, got error: {}", error);
+        },
+        crate::tools::ToolResult::Denied => {
+            panic!("Read tool was denied");
         }
     }
 
@@ -163,8 +175,11 @@ async fn test_read_tool_line_range_reading() {
             panic!("Read tool should fail for non-existent file");
         },
         crate::tools::ToolResult::Error { error, .. } => {
-            assert!(error.contains("No such file") || error.contains("not found") || error.contains("cannot find") || error.contains("does not exist"), 
+            assert!(error.contains("No such file") || error.contains("not found") || error.contains("cannot find") || error.contains("does not exist"),
                    "Should indicate file not found error, got: {}", error);
+        },
+        crate::tools::ToolResult::Denied => {
+            panic!("Read tool was denied");
         }
     }
 }

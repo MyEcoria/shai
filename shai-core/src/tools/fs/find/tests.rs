@@ -72,6 +72,9 @@ fn main() {
         },
         crate::tools::ToolResult::Error { error, .. } => {
             panic!("Find tool should succeed, got error: {}", error);
+        },
+        crate::tools::ToolResult::Denied => {
+            panic!("Find tool was denied");
         }
     }
 
@@ -97,6 +100,9 @@ fn main() {
         },
         crate::tools::ToolResult::Error { error, .. } => {
             panic!("Find tool should succeed, got error: {}", error);
+        },
+        crate::tools::ToolResult::Denied => {
+            panic!("Find tool was denied");
         }
     }
 }
@@ -147,6 +153,9 @@ async fn test_find_tool_filename_search() {
         },
         crate::tools::ToolResult::Error { error, .. } => {
             panic!("Find tool should succeed, got error: {}", error);
+        },
+        crate::tools::ToolResult::Denied => {
+            panic!("Find tool was denied");
         }
     }
 }
@@ -191,6 +200,9 @@ async fn test_find_tool_with_filters() {
         },
         crate::tools::ToolResult::Error { error, .. } => {
             panic!("Find tool should succeed, got error: {}", error);
+        },
+        crate::tools::ToolResult::Denied => {
+            panic!("Find tool was denied");
         }
     }
 }
@@ -243,6 +255,9 @@ fn calculate_guest_score() -> u32 {
         },
         crate::tools::ToolResult::Error { error, .. } => {
             panic!("Find tool should succeed, got error: {}", error);
+        },
+        crate::tools::ToolResult::Denied => {
+            panic!("Find tool was denied");
         }
     }
 }
@@ -277,6 +292,9 @@ async fn test_find_tool_invalid_regex() {
         },
         crate::tools::ToolResult::Error { error, .. } => {
             assert!(error.contains("Invalid regex pattern"), "Should indicate regex error");
+        },
+        crate::tools::ToolResult::Denied => {
+            panic!("Find tool was denied");
         }
     }
 }
