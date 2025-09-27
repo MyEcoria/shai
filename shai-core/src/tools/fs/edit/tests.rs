@@ -154,10 +154,10 @@ async fn test_execute_vs_preview_behavior() {
     let dir = tempdir().unwrap();
     let file_path = dir.path().join("test.txt");
     fs::write(&file_path, "Original content").unwrap();
-    
+
     let log = Arc::new(FsOperationLog::new());
     log.log_operation(crate::tools::FsOperationType::Read, file_path.to_string_lossy().to_string()).await;
-    
+
     let tool = EditTool::new(log);
     let params = EditToolParams {
         path: file_path.to_string_lossy().to_string(),
@@ -171,10 +171,53 @@ async fn test_execute_vs_preview_behavior() {
     assert!(preview_result.is_some());
     let content_after_preview = fs::read_to_string(&file_path).unwrap();
     assert_eq!(content_after_preview, "Original content");
-    
+
     // Execute should modify file
     let execute_result = tool.execute(params, None).await;
     assert!(execute_result.is_success());
     let content_after_execute = fs::read_to_string(&file_path).unwrap();
     assert_eq!(content_after_execute, "Modified content");
+}
+
+#[test]
+fn test_focused_diff_output() {
+    let log = Arc::new(FsOperationLog::new());
+    let tool = EditTool::with_context_lines(log, 2); // 2 lines of context
+
+    // Create a large file with changes scattered throughout
+    let before = "line1\nline2\nline3\nline4\nline5\nline6\nline7\nline8\nline9\nline10\nline11\nline12\nline13\nline14\nline15\nline16\nline17\nline18\nline19\nline20";
+    let after = "line1\nline2\nMODIFIED3\nline4\nline5\nline6\nline7\nline8\nline9\nline10\nline11\nline12\nMODIFIED13\nline14\nline15\nline16\nline17\nline18\nline19\nline20";
+
+    let diff = tool.myers_diff(before, after);
+    println!("Focused diff output:\n{}", diff);
+
+    // Should contain the changed lines
+    assert!(diff.contains("MODIFIED3"));
+    assert!(diff.contains("MODIFIED13"));
+
+    // Should contain context around changes (2 lines before/after)
+    assert!(diff.contains("line1"));  // Context before first change
+    assert!(diff.contains("line2"));  // Context before first change
+    assert!(diff.contains("line4"));  // Context after first change
+    assert!(diff.contains("line5"));  // Context after first change
+
+    assert!(diff.contains("line11")); // Context before second change
+    assert!(diff.contains("line12")); // Context before second change
+    assert!(diff.contains("line14")); // Context after second change
+    assert!(diff.contains("line15")); // Context after second change
+
+    // Should have separator between distant changes
+    assert!(diff.contains("..."));
+
+    // Should NOT contain lines far from changes (like line6-10, line16-20)
+    assert!(!diff.contains("line6"));
+    assert!(!diff.contains("line7"));
+    assert!(!diff.contains("line8"));
+    assert!(!diff.contains("line9"));
+    assert!(!diff.contains("line10"));
+    assert!(!diff.contains("line16"));
+    assert!(!diff.contains("line17"));
+    assert!(!diff.contains("line18"));
+    assert!(!diff.contains("line19"));
+    assert!(!diff.contains("line20"));
 }

@@ -11,67 +11,145 @@ use std::sync::Arc;
 #[derive(Clone)]
 pub struct EditTool {
     operation_log: Arc<FsOperationLog>,
+    context_lines: usize,
 }
 
 impl EditTool {
     pub fn new(operation_log: Arc<FsOperationLog>) -> Self {
-        Self { operation_log }
+        Self::with_context_lines(operation_log, 3)
     }
 
-    pub fn myers_diff(&self, before_content: &str, after_content: &str) -> String {        
+    pub fn with_context_lines(operation_log: Arc<FsOperationLog>, context_lines: usize) -> Self {
+        Self {
+            operation_log,
+            context_lines,
+        }
+    }
+
+    pub fn myers_diff(&self, before_content: &str, after_content: &str) -> String {
         let diff = TextDiff::from_lines(before_content, after_content);
-        
+
         // Check if there are any changes
         let has_changes = diff.iter_all_changes().any(|change| change.tag() != ChangeTag::Equal);
         if !has_changes {
             return "No changes".to_string();
         }
-        
-        let mut diff_output = Vec::new();
+
+        // Collect all changes with their positions and metadata
+        #[derive(Debug)]
+        struct ChangeInfo {
+            tag: ChangeTag,
+            content: String,
+            old_line: usize,
+            new_line: usize,
+        }
+
+        let mut all_changes = Vec::new();
         let mut line_num_old = 1;
         let mut line_num_new = 1;
-        
+
+        // Collect all changes first
         for change in diff.iter_all_changes() {
-            let (sign, style) = match change.tag() {
-                ChangeTag::Delete => ("-", "\x1b[48;5;88;37m"),  // Dark red background
-                ChangeTag::Insert => ("+", "\x1b[48;5;28;37m"),  // Dark green background
-                ChangeTag::Equal => (" ", ""),
+            let change_info = ChangeInfo {
+                tag: change.tag(),
+                content: change.value().trim_end().to_string(),
+                old_line: line_num_old,
+                new_line: line_num_new,
             };
-            
-            let line_no = match change.tag() {
-                ChangeTag::Delete => line_num_old,
-                ChangeTag::Insert => line_num_new,
-                ChangeTag::Equal => line_num_old, // Use old line number for context
-            };
-            
-            if change.tag() == ChangeTag::Equal {
-                diff_output.push(format!(
-                    "\x1b[2;37m{:4}\x1b[0m   {}",
-                    line_no,
-                    change.value().trim_end()
-                ));
-                line_num_old += 1;
-                line_num_new += 1;
-            } else {
-                diff_output.push(format!(
-                    "\x1b[2;37m{:4}\x1b[0m {}{} {}\x1b[0m",
-                    line_no,
-                    style,
-                    sign,
-                    change.value().trim_end()
-                ));
-                
-                match change.tag() {
-                    ChangeTag::Delete => line_num_old += 1,
-                    ChangeTag::Insert => line_num_new += 1,
-                    ChangeTag::Equal => {
-                        line_num_old += 1;
-                        line_num_new += 1;
-                    }
+
+            all_changes.push(change_info);
+
+            // Update line numbers
+            match change.tag() {
+                ChangeTag::Delete => line_num_old += 1,
+                ChangeTag::Insert => line_num_new += 1,
+                ChangeTag::Equal => {
+                    line_num_old += 1;
+                    line_num_new += 1;
                 }
             }
         }
-        
+
+        // Find positions of actual changes (not Equal)
+        let mut change_positions = Vec::new();
+        for (idx, change) in all_changes.iter().enumerate() {
+            if change.tag != ChangeTag::Equal {
+                change_positions.push(idx);
+            }
+        }
+
+        if change_positions.is_empty() {
+            return "No changes".to_string();
+        }
+
+        // Calculate ranges to show (changes + context)
+        let mut ranges_to_show = Vec::new();
+        let context = self.context_lines;
+
+        let mut current_start = change_positions[0].saturating_sub(context);
+        let mut current_end = (change_positions[0] + context + 1).min(all_changes.len());
+
+        // Merge overlapping ranges
+        for &pos in &change_positions[1..] {
+            let range_start = pos.saturating_sub(context);
+            let range_end = (pos + context + 1).min(all_changes.len());
+
+            // If ranges overlap or are adjacent, merge them
+            if range_start <= current_end {
+                current_end = range_end;
+            } else {
+                // Save current range and start new one
+                ranges_to_show.push((current_start, current_end));
+                current_start = range_start;
+                current_end = range_end;
+            }
+        }
+        ranges_to_show.push((current_start, current_end));
+
+        // Generate focused diff output
+        let mut diff_output = Vec::new();
+
+        for (range_idx, &(start, end)) in ranges_to_show.iter().enumerate() {
+            // Add separator between ranges (if there are multiple ranges)
+            if range_idx > 0 {
+                diff_output.push("\x1b[2;37m...\x1b[0m".to_string());
+            }
+
+            // Show lines in this range
+            for i in start..end {
+                let change = &all_changes[i];
+                let (sign, style) = match change.tag {
+                    ChangeTag::Delete => ("-", "\x1b[48;5;88;37m"),  // Dark red background
+                    ChangeTag::Insert => ("+", "\x1b[48;5;28;37m"),  // Dark green background
+                    ChangeTag::Equal => (" ", ""),
+                };
+
+                let line_no = match change.tag {
+                    ChangeTag::Delete => change.old_line,
+                    ChangeTag::Insert => change.new_line,
+                    ChangeTag::Equal => change.old_line,
+                };
+
+                if change.tag == ChangeTag::Equal {
+                    // Context line
+                    diff_output.push(format!(
+                        "\x1b[2;37m{:4}\x1b[0m   {}",
+                        line_no,
+                        change.content
+                    ));
+                } else {
+                    // Changed line
+                    diff_output.push(format!(
+                        "\x1b[2;37m{:4}\x1b[0m {}{} {}\x1b[0m",
+                        line_no,
+                        style,
+                        sign,
+                        change.content
+                    ));
+                }
+            }
+        }
+
         diff_output.join("\n")
     }
 

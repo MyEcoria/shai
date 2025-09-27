@@ -15,7 +15,11 @@ pub struct MultiEditTool {
 
 impl MultiEditTool {
     pub fn new(operation_log: Arc<FsOperationLog>) -> Self {
-        let edit_tool = EditTool::new(operation_log.clone());
+        Self::with_context_lines(operation_log, 3)
+    }
+
+    pub fn with_context_lines(operation_log: Arc<FsOperationLog>, context_lines: usize) -> Self {
+        let edit_tool = EditTool::with_context_lines(operation_log.clone(), context_lines);
         Self { operation_log, edit_tool }
     }
     
