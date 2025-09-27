@@ -157,7 +157,7 @@ impl EditTool {
     pub fn perform_edit_on_content(&self, content: &str, old_string: &str, new_string: &str, replace_all: bool) -> Result<(String, usize), String> {
         // Check if the old_string exists in the content
         if !content.contains(old_string) {
-            return Err(format!("Pattern '{}' not found in content", old_string));
+            return Err("Pattern not found in file".to_string());
         }
 
         // Perform the replacement
