@@ -12,7 +12,9 @@ pub struct ProviderConfig {
     pub provider: String,
     pub env_vars: std::collections::HashMap<String, String>,
     pub model: String,
-    pub tool_method: ToolCallMethod
+    pub tool_method: ToolCallMethod,
+    #[serde(default)]
+    pub max_context_tokens: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -36,9 +38,23 @@ impl ShaiConfig {
             provider,
             env_vars,
             model,
-            tool_method: ToolCallMethod::FunctionCall
+            tool_method: ToolCallMethod::FunctionCall,
+            max_context_tokens: None,
         };
-        
+
+        self.providers.push(provider_config);
+        self.providers.len() - 1
+    }
+
+    pub fn add_provider_with_context(&mut self, provider: String, env_vars: std::collections::HashMap<String, String>, model: String, max_context_tokens: Option<u32>) -> usize {
+        let provider_config = ProviderConfig {
+            provider,
+            env_vars,
+            model,
+            tool_method: ToolCallMethod::FunctionCall,
+            max_context_tokens,
+        };
+
         self.providers.push(provider_config);
         self.providers.len() - 1
     }
@@ -228,7 +244,8 @@ impl Default for ShaiConfig {
                     (String::from("OVH_BASE_URL"), String::from("https://qwen-3-32b.endpoints.kepler.ai.cloud.ovh.net/api/openai_compat/v1"))
                 ]),
                 model: "Qwen3-32B".to_string(),
-                tool_method: ToolCallMethod::FunctionCall
+                tool_method: ToolCallMethod::FunctionCall,
+                max_context_tokens: Some(32768), // Qwen3-32B has 32k context
             }],
             selected_provider: 0,
             mcp_configs: HashMap::new(),

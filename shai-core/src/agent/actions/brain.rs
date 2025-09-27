@@ -47,7 +47,7 @@ impl AgentCore {
 
     /// Process a brain task result
     pub async fn process_next_step(&mut self, result: Result<ThinkerDecision, AgentError>) -> Result<(), AgentError> {
-        let ThinkerDecision{message, flow, token_usage} = self.handle_brain_error(result).await?;
+        let ThinkerDecision{message, flow, token_usage, compression_info} = self.handle_brain_error(result).await?;
         let ChatMessage::Assistant { content, reasoning_content, tool_calls, .. } = message.clone() else {
             return self.handle_brain_error::<ThinkerDecision>(
                 Err(AgentError::InvalidResponse(format!("ChatMessage::Assistant expected, but got {:?} instead", message)))).await.map(|_| ()
@@ -72,6 +72,18 @@ impl AgentCore {
                 output_tokens
             }).await;
         }
+
+        // Emit context compression event if available
+        if let Some(compression_info) = compression_info {
+            let _ = self.emit_event(AgentEvent::ContextCompressed {
+                original_message_count: compression_info.original_message_count,
+                compressed_message_count: compression_info.compressed_message_count,
+                tokens_before: compression_info.tokens_before,
+                current_tokens: compression_info.current_tokens,
+                max_tokens: compression_info.max_tokens,
+                ai_summary: compression_info.ai_summary,
+            }).await;
+        }
     
         // run tool call if any
         let tool_calls_from_brain = tool_calls.unwrap_or(vec![]);
@@ -86,9 +98,64 @@ impl AgentCore {
                 self.set_state(InternalAgentState::Running).await;
             }
             ThinkerFlowControl::AgentPause => {
+                // Check if we need to compress context when task is complete
+                self.check_and_compress_context().await?;
                 self.set_state(InternalAgentState::Paused).await;
             }
         }
+        Ok(())
+    }
+
+    /// Check if context compression is needed and apply it when task is complete
+    async fn check_and_compress_context(&mut self) -> Result<(), AgentError> {
+        // Extract compression logic from the brain if it's a CoderBrain
+        let brain = self.brain.clone();
+        let brain_read = brain.read().await;
+
+        // This is a bit hacky but we need to check if the brain has a compressor
+        // We'll use Any trait to downcast to CoderBrain
+        use std::any::Any;
+
+        if let Some(coder_brain) = (&**brain_read as &dyn Any).downcast_ref::<crate::runners::coder::coder::CoderBrain>() {
+            if let Some(compressor) = &coder_brain.context_compressor {
+                let compressor_clone = compressor.clone();
+                drop(brain_read); // Release the read lock
+
+                let trace = self.trace.read().await.clone();
+                let mut compressor_clone = compressor_clone;
+
+                if compressor_clone.should_compress_conversation(&trace) {
+                    let (compressed_trace, compression_info) = compressor_clone.compress_messages(trace).await;
+
+                    // Update the trace with compressed version
+                    {
+                        let mut trace_write = self.trace.write().await;
+                        *trace_write = compressed_trace;
+                    }
+
+                    // Update the compressor in the brain
+                    {
+                        let mut brain_write = brain.write().await;
+                        if let Some(coder_brain_mut) = (&mut **brain_write as &mut dyn Any).downcast_mut::<crate::runners::coder::coder::CoderBrain>() {
+                            coder_brain_mut.context_compressor = Some(compressor_clone);
+                        }
+                    }
+
+                    // Emit compression event if compression occurred
+                    if let Some(compression_info) = compression_info {
+                        let _ = self.emit_event(AgentEvent::ContextCompressed {
+                            original_message_count: compression_info.original_message_count,
+                            compressed_message_count: compression_info.compressed_message_count,
+                            tokens_before: compression_info.tokens_before,
+                            current_tokens: compression_info.current_tokens,
+                            max_tokens: compression_info.max_tokens,
+                            ai_summary: compression_info.ai_summary,
+                        }).await;
+                    }
+                }
+            }
+        }
+
         Ok(())
     }
 
@@ -98,7 +165,7 @@ impl AgentCore {
             Ok(value) => Ok(value),
             Err(error) => {
                 self.set_state(InternalAgentState::Paused).await;
-                let _ = self.emit_event(AgentEvent::BrainResult { 
+                let _ = self.emit_event(AgentEvent::BrainResult {
                     timestamp: Utc::now(),
                     thought: Err(error.clone())
                 }).await;

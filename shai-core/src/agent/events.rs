@@ -101,6 +101,15 @@ pub enum AgentEvent {
         input_tokens: u32,
         output_tokens: u32
     },
+    /// Context compression notification
+    ContextCompressed {
+        original_message_count: usize,
+        compressed_message_count: usize,
+        tokens_before: Option<u32>,
+        current_tokens: Option<u32>,
+        max_tokens: u32,
+        ai_summary: Option<String>,
+    },
 }
 
 /// Types of user input that an agent can request
@@ -272,6 +281,16 @@ impl std::fmt::Debug for AgentEvent {
                 f.debug_struct("TokenUsage")
                     .field("input_tokens", input_tokens)
                     .field("output_tokens", output_tokens)
+                    .finish()
+            }
+            AgentEvent::ContextCompressed { original_message_count, compressed_message_count, tokens_before, current_tokens, max_tokens, ai_summary } => {
+                f.debug_struct("ContextCompressed")
+                    .field("original_message_count", original_message_count)
+                    .field("compressed_message_count", compressed_message_count)
+                    .field("tokens_before", tokens_before)
+                    .field("current_tokens", current_tokens)
+                    .field("max_tokens", max_tokens)
+                    .field("ai_summary", ai_summary)
                     .finish()
             }
         }

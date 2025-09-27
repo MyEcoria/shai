@@ -114,6 +114,47 @@ impl PrettyFormatter {
                 // Don't display token usage in the main output - it's handled by /tokens command
                 None
             },
+            AgentEvent::ContextCompressed { original_message_count, compressed_message_count, tokens_before, current_tokens, max_tokens, ai_summary } => {
+                let net_change = if original_message_count > compressed_message_count {
+                    original_message_count - compressed_message_count
+                } else {
+                    0
+                };
+
+                let markdown = match (tokens_before, current_tokens) {
+                    (Some(before), Some(after)) => {
+                        if net_change > 0 {
+                            format!(
+                                "● **Context Compressed with AI Summary** - Summarized {} message(s) to stay within token limits ({} → {} tokens)",
+                                net_change, before, after
+                            )
+                        } else {
+                            format!(
+                                "● **Context Compression Applied** - Added AI summary to optimize token usage ({} → {} tokens)",
+                                before, after
+                            )
+                        }
+                    }
+                    _ => {
+                        if net_change > 0 {
+                            format!(
+                                "● **Context Compressed with AI Summary** - Summarized {} message(s) to stay within token limits",
+                                net_change
+                            )
+                        } else {
+                            format!(
+                                "● **Context Compression Applied** - Added AI summary to optimize token usage"
+                            )
+                        }
+                    }
+                };
+
+                let mut compression_skin = self.skin.clone();
+                compression_skin.paragraph.set_fg(rgb(100, 200, 255)); // Blue for AI compression
+                compression_skin.bold.set_fg(rgb(120, 220, 255)); // Light blue for bold
+
+                Some(compression_skin.term_text(&markdown).to_string())
+            },
         }.map(|s| format!("\n{}", s))
     }
 
