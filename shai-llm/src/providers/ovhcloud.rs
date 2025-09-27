@@ -7,9 +7,11 @@ use openai_dive::v1::{
     resources::{
         chat::{ChatCompletionParameters, ChatCompletionResponse, ChatCompletionChunkResponse},
         model::ListModelResponse,
+        shared::Usage,
     },
     error::APIError
 };
+use serde_json::Value;
 
 const OVH_API_BASE: &str = "https://oai.endpoints.kepler.ai.cloud.ovh.net/v1";
 
@@ -34,14 +36,39 @@ impl OvhCloudProvider {
         })
     }
 
-    fn sanitize_request(&self, mut request: ChatCompletionParameters) -> ChatCompletionParameters {        
+    fn sanitize_request(&self, mut request: ChatCompletionParameters) -> ChatCompletionParameters {
         // OVH uses max_tokens instead of max_completion_tokens
         if request.max_completion_tokens.is_some() {
             request.max_tokens = request.max_completion_tokens;
             request.max_completion_tokens = None;
         }
-        
+
         request
+    }
+
+    fn process_usage_information(&self, mut response: ChatCompletionResponse) -> ChatCompletionResponse {
+        if let Ok(response_json) = serde_json::to_value(&response) {
+            if let Some(usage_obj) = response_json.get("usage") {
+                let input_tokens = usage_obj.get("prompt_tokens")
+                    .or_else(|| usage_obj.get("input_tokens"))
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0) as u32;
+
+                let output_tokens = usage_obj.get("completion_tokens")
+                    .or_else(|| usage_obj.get("output_tokens"))
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0) as u32;
+
+                response.usage = Some(Usage {
+                    prompt_tokens: Some(input_tokens),
+                    completion_tokens: Some(output_tokens),
+                    total_tokens: input_tokens + output_tokens,
+                    prompt_tokens_details: None,
+                    completion_tokens_details: None,
+                });
+            }
+        }
+        response
     }
 }
 
@@ -65,8 +92,10 @@ impl LlmProvider for OvhCloudProvider {
 
     async fn chat(&self, request: ChatCompletionParameters) -> Result<ChatCompletionResponse, LlmError> {
         let sanitized_request = self.sanitize_request(request);
-        let response = self.client.chat().create(sanitized_request).await
+        let mut response = self.client.chat().create(sanitized_request).await
             .map_err(|e| Box::new(e) as LlmError)?;
+
+        response = self.process_usage_information(response);
         Ok(response)
     }
 

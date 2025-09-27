@@ -9,6 +9,7 @@ impl App<'_> {
             (("/exit","exit from the tui"), vec![]),
             (("/auth","select a provider"), vec![]),
             (("/tc","set the tool call method: [fc | fc2 | so]"), vec!["method"]),
+            (("/tokens","display token usage (input/output)"), vec![]),
         ])
         .into_iter()
         .map(|((cmd,desc),args)|((cmd.to_string(),desc.to_string()),args.into_iter().map(|s|s.to_string()).collect()))
@@ -54,6 +55,15 @@ impl App<'_> {
                         _ => {}
                     }
                 }
+            }
+            "/tokens" => {
+                let msg = format!(
+                    "Token Usage - Input: {}, Output: {}, Total: {}",
+                    self.total_input_tokens,
+                    self.total_output_tokens,
+                    self.total_input_tokens + self.total_output_tokens
+                );
+                self.input.alert_msg(&msg, Duration::from_secs(5));
             }
             _ => {
                 self.input.alert_msg("command unknown", Duration::from_secs(1));
