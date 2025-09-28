@@ -116,7 +116,7 @@ impl Brain for CoderBrain {
                 .map_err(|e| AgentError::LlmError(e.to_string()))?;
 
         // Extract token usage information
-        let (input_tokens, output_tokens) = if let Some(usage) = &brain_decision.usage {
+        let token_usage = if let Some(usage) = &brain_decision.usage {
             let input = usage.prompt_tokens.unwrap_or(0);
             let output = usage.completion_tokens.unwrap_or(0);
             debug!(target: "brain::coder::tokens",
@@ -125,33 +125,25 @@ impl Brain for CoderBrain {
                 total_tokens = usage.total_tokens,
                 "Token usage for LLM call"
             );
-
-            // Update context compressor with token usage
-            if let Some(compressor) = &mut self.context_compressor {
-                compressor.update_token_count(input, output);
-                if compressor.is_near_limit() {
-                    debug!(target: "brain::coder::context",
-                        current_tokens = compressor.get_current_tokens(),
-                        max_tokens = compressor.get_max_tokens(),
-                        "Approaching context limit"
-                    );
-                }
-            }
-
-            (input, output)
+            Some((input, output))
         } else {
-            (0, 0)
+            None
         };
 
         // stop here if there's no other tool calls
         let message = brain_decision.choices.into_iter().next().unwrap().message;
         if let ChatMessage::Assistant { reasoning_content, content, tool_calls, .. } = &message {
             if tool_calls.as_ref().map_or(true, |calls| calls.is_empty()) {
-                return Ok(ThinkerDecision::agent_pause_with_tokens(message, input_tokens, output_tokens));
+                return Ok(match token_usage {
+                    Some((input_tokens, output_tokens)) => ThinkerDecision::agent_pause_with_tokens(message, input_tokens, output_tokens),
+                    None => ThinkerDecision::agent_pause(message),
+                });
             }
         }
-
-        Ok(ThinkerDecision::agent_continue_with_tokens(message, input_tokens, output_tokens))
+        Ok(match token_usage {
+            Some((input_tokens, output_tokens)) => ThinkerDecision::agent_continue_with_tokens(message, input_tokens, output_tokens),
+            None => ThinkerDecision::agent_continue(message),
+        })
     }
 }
 

@@ -33,33 +33,6 @@ impl OpenAICompatibleProvider {
             _ => None
         }
     }
-
-    fn process_usage_information(&self, mut response: ChatCompletionResponse) -> ChatCompletionResponse {
-        // Convert response to JSON to extract usage information
-        if let Ok(response_json) = serde_json::to_value(&response) {
-            if let Some(usage_obj) = response_json.get("usage") {
-                let input_tokens = usage_obj.get("prompt_tokens")
-                    .or_else(|| usage_obj.get("input_tokens"))
-                    .and_then(|v| v.as_u64())
-                    .unwrap_or(0) as u32;
-
-                let output_tokens = usage_obj.get("completion_tokens")
-                    .or_else(|| usage_obj.get("output_tokens"))
-                    .and_then(|v| v.as_u64())
-                    .unwrap_or(0) as u32;
-
-                // Update usage with properly extracted token counts
-                response.usage = Some(Usage {
-                    prompt_tokens: Some(input_tokens),
-                    completion_tokens: Some(output_tokens),
-                    total_tokens: input_tokens + output_tokens,
-                    prompt_tokens_details: None,
-                    completion_tokens_details: None,
-                });
-            }
-        }
-        response
-    }
 }
 
 #[async_trait]
@@ -74,7 +47,6 @@ impl LlmProvider for OpenAICompatibleProvider {
         let mut response = self.client.chat().create(request).await
             .map_err(|e| Box::new(e) as LlmError)?;
 
-        response = self.process_usage_information(response);
         Ok(response)
     }
 

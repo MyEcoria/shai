@@ -283,6 +283,7 @@ impl std::fmt::Debug for AgentEvent {
                     .field("output_tokens", output_tokens)
                     .finish()
             }
+<<<<<<< HEAD
             AgentEvent::ContextCompressed { original_message_count, compressed_message_count, tokens_before, current_tokens, max_tokens, ai_summary } => {
                 f.debug_struct("ContextCompressed")
                     .field("original_message_count", original_message_count)
@@ -293,6 +294,8 @@ impl std::fmt::Debug for AgentEvent {
                     .field("ai_summary", ai_summary)
                     .finish()
             }
+=======
+>>>>>>> dev/pbuchez/tokens-usage
         }
     }
 }
