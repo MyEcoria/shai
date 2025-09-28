@@ -77,15 +77,36 @@ impl Brain for CoderBrain {
                 context.method)
                 .await
                 .map_err(|e| AgentError::LlmError(e.to_string()))?;
-     
+
+        // Extract token usage information
+        let token_usage = if let Some(usage) = &brain_decision.usage {
+            let input = usage.prompt_tokens.unwrap_or(0);
+            let output = usage.completion_tokens.unwrap_or(0);
+            debug!(target: "brain::coder::tokens",
+                input_tokens = input,
+                output_tokens = output,
+                total_tokens = usage.total_tokens,
+                "Token usage for LLM call"
+            );
+            Some((input, output))
+        } else {
+            None
+        };
+
         // stop here if there's no other tool calls
         let message = brain_decision.choices.into_iter().next().unwrap().message;
         if let ChatMessage::Assistant { reasoning_content, content, tool_calls, .. } = &message {
             if tool_calls.as_ref().map_or(true, |calls| calls.is_empty()) {
-                return Ok(ThinkerDecision::agent_pause(message));
+                return Ok(match token_usage {
+                    Some((input_tokens, output_tokens)) => ThinkerDecision::agent_pause_with_tokens(message, input_tokens, output_tokens),
+                    None => ThinkerDecision::agent_pause(message),
+                });
             }
-        } 
-        Ok(ThinkerDecision::agent_continue(message))
+        }
+        Ok(match token_usage {
+            Some((input_tokens, output_tokens)) => ThinkerDecision::agent_continue_with_tokens(message, input_tokens, output_tokens),
+            None => ThinkerDecision::agent_continue(message),
+        })
     }
 }
 

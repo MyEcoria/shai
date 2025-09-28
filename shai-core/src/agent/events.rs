@@ -96,6 +96,11 @@ pub enum AgentEvent {
     Error { error: String },
     /// Agent execution completed
     Completed { success: bool, message: String },
+    /// Token usage information from LLM response
+    TokenUsage {
+        input_tokens: u32,
+        output_tokens: u32
+    },
 }
 
 /// Types of user input that an agent can request
@@ -261,6 +266,12 @@ impl std::fmt::Debug for AgentEvent {
                 f.debug_struct("Completed")
                     .field("success", success)
                     .field("message", message)
+                    .finish()
+            }
+            AgentEvent::TokenUsage { input_tokens, output_tokens } => {
+                f.debug_struct("TokenUsage")
+                    .field("input_tokens", input_tokens)
+                    .field("output_tokens", output_tokens)
                     .finish()
             }
         }

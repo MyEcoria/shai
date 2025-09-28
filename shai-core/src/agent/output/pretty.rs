@@ -110,6 +110,10 @@ impl PrettyFormatter {
                 
                 Some(completion_skin.term_text(&markdown).to_string())
             },
+            AgentEvent::TokenUsage { .. } => {
+                // Don't display token usage in the main output - it's handled by /tokens command
+                None
+            },
         }.map(|s| format!("\n{}", s))
     }
 

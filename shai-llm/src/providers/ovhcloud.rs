@@ -7,9 +7,11 @@ use openai_dive::v1::{
     resources::{
         chat::{ChatCompletionParameters, ChatCompletionResponse, ChatCompletionChunkResponse},
         model::ListModelResponse,
+        shared::Usage,
     },
     error::APIError
 };
+use serde_json::Value;
 
 const OVH_API_BASE: &str = "https://oai.endpoints.kepler.ai.cloud.ovh.net/v1";
 
@@ -34,13 +36,13 @@ impl OvhCloudProvider {
         })
     }
 
-    fn sanitize_request(&self, mut request: ChatCompletionParameters) -> ChatCompletionParameters {        
+    fn sanitize_request(&self, mut request: ChatCompletionParameters) -> ChatCompletionParameters {
         // OVH uses max_tokens instead of max_completion_tokens
         if request.max_completion_tokens.is_some() {
             request.max_tokens = request.max_completion_tokens;
             request.max_completion_tokens = None;
         }
-        
+
         request
     }
 }
@@ -65,8 +67,9 @@ impl LlmProvider for OvhCloudProvider {
 
     async fn chat(&self, request: ChatCompletionParameters) -> Result<ChatCompletionResponse, LlmError> {
         let sanitized_request = self.sanitize_request(request);
-        let response = self.client.chat().create(sanitized_request).await
+        let mut response = self.client.chat().create(sanitized_request).await
             .map_err(|e| Box::new(e) as LlmError)?;
+
         Ok(response)
     }
 
