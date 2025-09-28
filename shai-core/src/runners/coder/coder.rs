@@ -125,6 +125,18 @@ impl Brain for CoderBrain {
                 total_tokens = usage.total_tokens,
                 "Token usage for LLM call"
             );
+            // Update context compressor with token usage
+            if let Some(compressor) = &mut self.context_compressor {
+                compressor.update_token_count(input, output);
+                if compressor.is_near_limit() {
+                    debug!(target: "brain::coder::context",
+                        current_tokens = compressor.get_current_tokens(),
+                        max_tokens = compressor.get_max_tokens(),
+                        "Approaching context limit"
+                    );
+                }
+            }
+
             Some((input, output))
         } else {
             None
