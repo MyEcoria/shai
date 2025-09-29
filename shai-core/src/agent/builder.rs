@@ -2,6 +2,8 @@ use shai_llm::{ChatMessage, LlmClient};
 use uuid::Uuid;
 use std::sync::Arc;
 
+
+
 use crate::tools::mcp::mcp_oauth::signin_oauth;
 use crate::tools::{create_mcp_client, get_mcp_tools, AnyTool, BashTool, EditTool, FetchTool, FindTool, FsOperationLog, LsTool, McpConfig, MultiEditTool, ReadTool, TodoReadTool, TodoStorage, TodoWriteTool, WriteTool};
 use crate::config::agent::AgentConfig;
@@ -76,7 +78,8 @@ impl AgentBuilder {
         if let Some(goal) = self.goal {
             self.trace.push(ChatMessage::User { content: shai_llm::ChatMessageContent::Text(goal.clone()), name: None });
         }
-        
+
+
         AgentCore::new(
             self.session_id.clone(),
             self.brain,

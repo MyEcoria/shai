@@ -1,4 +1,6 @@
 use std::sync::Arc;
+use std::fs;
+use std::sync::OnceLock;
 
 use crate::tools::{AnyTool, ToolResult};
 
@@ -55,7 +57,15 @@ You are running in the following environment:
 
 static CODER_PROMPT: &str = r#"{{CODER_GUIDELINE}}
 
+{{SHAI_PROMPT}}
+
 {{CODER_ENV}}"#;
+
+static SHAI_PROMPT: &str = r#"
+--- Begin SHAI.md (project explanations/instructions) ---
+{{SHAI}}
+--- End SHAI.md ---
+"#;
 
 static CODER_PROMPT_GIT: &str = r#"
 <git>
@@ -132,6 +142,20 @@ pub fn render_system_prompt_template(template: &str) -> String {
             coder_base_prompt += &git_info;
         }
         result = result.replace("{{CODER_BASE_PROMPT}}", &coder_base_prompt);
+    }
+
+    // Insert SHAI content if placeholder present (load once)
+    // Also handle SHAI_PROMPT placeholder
+    if result.contains("{{SHAI_PROMPT}}") {
+        static SHAI_CONTENT: OnceLock<String> = OnceLock::new();
+        let content = SHAI_CONTENT.get_or_init(|| fs::read_to_string("SHAI.md").unwrap_or_default());
+
+        if !content.is_empty() {
+            result = result.replace("{{SHAI_PROMPT}}", SHAI_PROMPT);
+            result = result.replace("{{SHAI}}", content);
+        } else {
+            result = result.replace("{{SHAI_PROMPT}}", "");
+        }
     }
 
     // Only get git info if individual git placeholders are used
