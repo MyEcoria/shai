@@ -37,6 +37,10 @@ shai auth
 
 ![shai auth](./docs/assets/auth.gif)
 
+## Project context file
+
+You can create a `SHAI.md` file at the root of your project containing any information you want Shai to know about the project (architecture, build steps, important directories, etc.). Shai will automatically load this file as additional context.
+
 Once you have a provider set up, you can run shai:
 
 ```
