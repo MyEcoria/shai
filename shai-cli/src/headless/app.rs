@@ -96,11 +96,15 @@ impl AppHeadless {
             .run().await;
 
         match result {
-            Ok(AgentResult { success, message, trace: agent_trace }) => {
+            Ok(AgentResult { success, message, trace: full_trace, compressed_trace }) => {
                 if trace {
-                    println!("{}", serde_json::to_string_pretty(&agent_trace)?);
+                    // Display comparison between compressed and full trace
+                    println!("========== COMPRESSED TRACE ({} messages) ==========", compressed_trace.len());
+                    println!("{}", serde_json::to_string_pretty(&compressed_trace)?);
+                    println!("\n========== FULL TRACE ({} messages) ==========", full_trace.len());
+                    println!("{}", serde_json::to_string_pretty(&full_trace)?);
                 } else {
-                    if let Some(message) = agent_trace.last() {
+                    if let Some(message) = full_trace.last() {
                         match message {
                             ChatMessage::Assistant { content: Some(ChatMessageContent::Text(content)), .. } => {
                                 println!("{}",content);

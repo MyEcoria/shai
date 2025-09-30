@@ -142,25 +142,42 @@ impl ContextCompressor {
         let mut middle_messages = Vec::new();
         let mut recent_messages = Vec::new();
 
-        // Separate messages into categories
-        for (index, message) in messages.iter().enumerate() {
+        // First pass: filter out old summary messages and collect non-system messages
+        let non_summary_messages: Vec<ChatMessage> = messages.iter()
+            .filter(|msg| {
+                // Filter out old summary messages
+                !matches!(msg, ChatMessage::System { name: Some(name), .. } if name == "summary")
+            })
+            .cloned()
+            .collect();
+
+        // Second pass: categorize messages
+        let non_system_count = non_summary_messages.iter()
+            .filter(|msg| !matches!(msg, ChatMessage::System { .. }))
+            .count();
+
+        let mut non_system_index = 0;
+        for message in non_summary_messages {
             match message {
                 ChatMessage::System { .. } => {
+                    // Keep non-summary system messages (like the original system prompt)
                     system_messages.push(message.clone());
                 }
                 _ => {
-                    // Keep only the last 2 messages (1 user-assistant pair) as recent
-                    // Everything else goes to middle_messages for summarization
-                    if index >= messages.len().saturating_sub(2) {
+                    // Keep the last 6 non-system messages (2-3 complete interaction cycles) as recent
+                    // This ensures we preserve enough context for the agent to understand
+                    // what it was doing and avoid repeating actions
+                    if non_system_index >= non_system_count.saturating_sub(6) {
                         recent_messages.push(message.clone());
                     } else {
                         middle_messages.push(message.clone());
                     }
+                    non_system_index += 1;
                 }
             }
         }
 
-        // Add system messages first
+        // Add system messages first (excluding old summaries)
         compressed.extend(system_messages);
 
         // Try to generate AI summary of middle conversation
@@ -194,6 +211,8 @@ impl ContextCompressor {
 
         // Add recent messages
         compressed.extend(recent_messages);
+
+        self.current_tokens = summary_tokens;
 
         // Safely create compression info with validation
         let compression_info = CompressionInfo {
@@ -338,8 +357,8 @@ mod tests {
         assert!(compressor.should_compress());
     }
 
-    #[test]
-    fn test_message_compression() {
+    #[tokio::test]
+    async fn test_message_compression() {
         let mut compressor = ContextCompressor::new(1000);
         compressor.current_tokens = 850; // Above 80% threshold
 
@@ -374,7 +393,7 @@ mod tests {
             },
         ];
 
-        let compressed = compressor.compress_messages(messages);
+        let (compressed, _info) = compressor.compress_messages(messages).await;
 
         // Should contain: system message, compression notice, recent messages
         assert!(compressed.len() >= 4);

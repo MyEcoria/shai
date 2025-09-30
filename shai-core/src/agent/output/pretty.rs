@@ -252,7 +252,7 @@ impl PrettyFormatter {
                     }
                     
                     // Show first N lines for user display only for specific tools
-                    if matches!(call.tool_name.as_str(), "ls" | "bash" | "edit" | "multiedit" | "find" | "todo_read" | "todo_write") {
+                    if matches!(call.tool_name.as_str(), "ls" | "bash" | "edit" | "multiedit" | "search" | "todo_read" | "todo_write") {
                         let preview_lines: Vec<&str> = tool_output.lines().take(self.max_preview_lines).collect();
                         if !preview_lines.is_empty() {
                             let mut markdown_content = String::new();
@@ -291,7 +291,7 @@ impl PrettyFormatter {
             let param_names = match tool_name {
                 "read" | "write" | "edit" | "multiedit" => vec!["file_path", "path"],
                 "ls" | "glob" => vec!["path", "pattern"],
-                "find" | "grep" => vec!["pattern", "path"],
+                "search" | "grep" => vec!["pattern", "path"],
                 "bash" => vec!["command"],
                 _ => vec!["path", "file_path", "pattern", "command", "query", "input"]
             };

@@ -1,43 +1,72 @@
-static COMPRESSION_SUMMARY_PROMPT: &str = r#"Generate a comprehensive summary of this conversation, focusing on capturing every detail necessary to seamlessly continue the work.
+static COMPRESSION_SUMMARY_PROMPT: &str = r#"Compress this conversation by eliminating ONLY redundant information while preserving every unique piece of data needed to continue the work.
 
-Your summary must preserve:
-- All user requests and instructions (both completed and pending)
-- Technical decisions, code patterns, and architectural choices
-- The progression of work and problem-solving approaches
+## ORIGINAL OBJECTIVE
+Reproduce the FIRST user message VERBATIM - do not summarize or modify it:
+"""
+[Insert complete first user message here]
+"""
 
-Structure your summary as follows:
+## CONVERSATION FACTS
+Extract and organize ALL unique information from the conversation. If something was mentioned multiple times, include it only once. If it's unique information, include it even if it seems minor.
 
-**Context**
+### Technical Stack & Architecture
+[Every technology, library, framework, pattern, or architectural decision mentioned - list each once with version if specified]
 
-1. **Conversation Overview**: Provide a high-level narrative of the entire discussion, capturing the flow from initial objectives through all major topics and pivots.
+### Files & Code
+For each file mentioned:
+- `filepath`: [what it does] | [changes made] | [current state] | [remaining work]
 
-2. **Current Work Status**: Describe in detail the most recent task being addressed. Focus particularly on the latest messages to capture the immediate context before this summary request.
+Include code snippets where they contain decisions, patterns, or solutions that need to be preserved.
 
-3. **Technical Details**: Document all relevant technical elements including:
-   - Technologies, frameworks, and libraries used
-   - Coding conventions and patterns established
-   - Architectural decisions and design principles
-   - Configuration settings and environment details
+### User Requests & Instructions
+List chronologically, one per line, using EXACT quotes:
+1. "[exact user request]" → Status: [completed/in-progress/pending] → [deliverable or progress made]
+2. "[exact user request]" → Status: [completed/in-progress/pending] → [deliverable or progress made]
+[continue for all requests]
 
-4. **Files and Code References**: List all files, code sections, or resources that were:
-   - Examined or reviewed
-   - Modified or updated
-   - Created from scratch
-   Prioritize the most recently touched items.
+### Technical Decisions & Solutions
+[Every problem solved, decision made, or approach chosen - include the reasoning if it was discussed]
+- [Decision/Solution]: [context] → [implementation] → [outcome]
 
-5. **Problem-Solving History**: Summarize:
-   - Issues that were identified and resolved
-   - Solutions that were implemented
-   - Debugging approaches that were attempted
-   - Any ongoing troubleshooting efforts
+### Configuration & Environment
+[Everything about setup, environment variables, dependencies, compilation flags, etc. - each item once]
 
-6. **Outstanding Work and Next Actions**: 
-   - List all pending tasks explicitly requested by the user
-   - Outline the planned next steps for incomplete work
-   - Include verbatim quotes from recent messages showing the exact task in progress and where it was paused
-   - Add relevant code snippets where they provide clarity
+### Coding Conventions & Patterns
+[Any established patterns for naming, structure, error handling, testing, etc. that were agreed upon]
 
-Output only the summary itself, with no preamble or meta-commentary.
+### Current State & Progress
+**Most recent exchange**:
+- Last user message: "[exact quote]"
+- What was being done: [precise description]
+- Exact stopping point: [file, function, line of code, or specific action]
+
+**State of work**:
+[For each active work item: what's done, what's in progress, what remains]
+
+### Outstanding Work (In Order)
+**Next immediate action**: [specific next step with file/function names]
+
+**Remaining tasks**:
+1. [task] - [any context needed]
+2. [task] - [any context needed]
+[ordered by priority or logical sequence]
+
+**Deferred/Future**: [anything explicitly postponed or lower priority]
+
+### Important Constraints & Notes
+[User preferences, requirements, known bugs, warnings, gotchas - anything that affects how to proceed]
+
+---
+
+**Compression instructions**:
+- Keep the FIRST user message completely intact
+- Include information ONCE - if repeated in conversation, write it only once
+- Use exact quotes for user requests - never paraphrase what the user asked for
+- Include ALL unique technical details, decisions, and code patterns
+- Preserve ALL code snippets that show solutions or patterns
+- Be dense but complete - no fluff, but don't omit facts
+- Organize logically but don't create redundant categories
+- Most recent context is most critical - ensure it's captured precisely
 
 Conversation to summarize:
 {}"#;
