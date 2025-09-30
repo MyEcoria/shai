@@ -34,7 +34,7 @@ fn similarity_score(s1: &str, s2: &str) -> f64 {
 pub fn get_max_context(model_name: &str) -> usize {
     let models = [
         // OpenAI models
-        ("gpt-oss", 10_000),
+        ("gpt-oss", 131_000),
 
         // Mistral models
         ("mistral-small-3-2", 128_000),
