@@ -127,10 +127,11 @@ impl AgentCore {
                 drop(brain_read);
 
                 let trace = self.trace.read().await.clone();
+                let full_trace = self.full_trace.read().await.clone();
                 let mut compressor_clone = compressor_clone;
 
                 // Force compression - manually call compress_messages_force
-                let (compressed_trace, compression_info) = compressor_clone.compress_messages_force(trace).await;
+                let (compressed_trace, compression_info) = compressor_clone.compress_messages_force(trace, full_trace).await;
 
                 // Update the trace with compressed version
                 {
@@ -191,7 +192,8 @@ impl AgentCore {
                         cancellation_token: CancellationToken::new(),
                     }).await;
 
-                    let (compressed_trace, compression_info) = compressor_clone.compress_messages(trace).await;
+                    let full_trace = self.full_trace.read().await.clone();
+                    let (compressed_trace, compression_info) = compressor_clone.compress_messages(trace, full_trace).await;
 
                     // Update the trace with compressed version
                     {

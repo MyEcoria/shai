@@ -1,76 +1,54 @@
-static COMPRESSION_SUMMARY_PROMPT: &str = r#"Compress this conversation by eliminating ONLY redundant information while preserving every unique piece of data needed to continue the work.
+static COMPRESSION_SUMMARY_PROMPT: &str = r#"You are compressing conversation history. Your summary will replace older messages, so it must contain ALL information needed to continue the task.
 
-## ORIGINAL OBJECTIVE
-Reproduce the FIRST user message VERBATIM - do not summarize or modify it:
-"""
-[Insert complete first user message here]
-"""
+**CRITICAL RULES:**
+1. Extract the FIRST user message from the conversation and reproduce it EXACTLY (word for word)
+2. List every file that was read, with key data extracted from each file
+3. List every action taken (reads, edits, tool calls, reasoning)
+4. Identify what the assistant was doing and what remains to be done
+5. Be factual and complete - losing information breaks the conversation flow
 
-## CONVERSATION FACTS
-Extract and organize ALL unique information from the conversation. If something was mentioned multiple times, include it only once. If it's unique information, include it even if it seems minor.
+**FORMAT YOUR SUMMARY LIKE THIS:**
 
-### Technical Stack & Architecture
-[Every technology, library, framework, pattern, or architectural decision mentioned - list each once with version if specified]
+**Original user request (verbatim):**
+"[exact first user message here]"
 
-### Files & Code
-For each file mentioned:
-- `filepath`: [what it does] | [changes made] | [current state] | [remaining work]
+**Actions completed:**
+- Read file X: [key content/data from file]
+- Read file Y: [key content/data from file]
+- [any other actions taken]
 
-Include code snippets where they contain decisions, patterns, or solutions that need to be preserved.
+**Key information extracted:**
+- [important data point 1]
+- [important data point 2]
+- [etc.]
 
-### User Requests & Instructions
-List chronologically, one per line, using EXACT quotes:
-1. "[exact user request]" → Status: [completed/in-progress/pending] → [deliverable or progress made]
-2. "[exact user request]" → Status: [completed/in-progress/pending] → [deliverable or progress made]
-[continue for all requests]
+**Current state:**
+[What was being done at the end of this conversation segment]
 
-### Technical Decisions & Solutions
-[Every problem solved, decision made, or approach chosen - include the reasoning if it was discussed]
-- [Decision/Solution]: [context] → [implementation] → [outcome]
+**Next steps:**
+[What remains to be done to complete the user's request]
 
-### Configuration & Environment
-[Everything about setup, environment variables, dependencies, compilation flags, etc. - each item once]
+**EXAMPLE:**
+If the user said "read file.txt and summarize it", and the assistant read the file containing "Hello World", your summary should be:
 
-### Coding Conventions & Patterns
-[Any established patterns for naming, structure, error handling, testing, etc. that were agreed upon]
+**Original user request (verbatim):**
+"read file.txt and summarize it"
 
-### Current State & Progress
-**Most recent exchange**:
-- Last user message: "[exact quote]"
-- What was being done: [precise description]
-- Exact stopping point: [file, function, line of code, or specific action]
+**Actions completed:**
+- Read file.txt: Contains "Hello World"
 
-**State of work**:
-[For each active work item: what's done, what's in progress, what remains]
+**Key information extracted:**
+- file.txt content: "Hello World"
 
-### Outstanding Work (In Order)
-**Next immediate action**: [specific next step with file/function names]
+**Current state:**
+File has been read, summary needs to be provided to user
 
-**Remaining tasks**:
-1. [task] - [any context needed]
-2. [task] - [any context needed]
-[ordered by priority or logical sequence]
-
-**Deferred/Future**: [anything explicitly postponed or lower priority]
-
-### Important Constraints & Notes
-[User preferences, requirements, known bugs, warnings, gotchas - anything that affects how to proceed]
+**Next steps:**
+Provide summary of file.txt to the user
 
 ---
+"#;
 
-**Compression instructions**:
-- Keep the FIRST user message completely intact
-- Include information ONCE - if repeated in conversation, write it only once
-- Use exact quotes for user requests - never paraphrase what the user asked for
-- Include ALL unique technical details, decisions, and code patterns
-- Preserve ALL code snippets that show solutions or patterns
-- Be dense but complete - no fluff, but don't omit facts
-- Organize logically but don't create redundant categories
-- Most recent context is most critical - ensure it's captured precisely
-
-Conversation to summarize:
-{}"#;
-
-pub fn get_compression_summary_prompt(conversation_text: &str) -> String {
-    COMPRESSION_SUMMARY_PROMPT.replace("{}", conversation_text)
+pub fn get_compression_summary_prompt() -> String {
+    COMPRESSION_SUMMARY_PROMPT.to_string()
 }

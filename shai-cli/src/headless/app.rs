@@ -98,10 +98,10 @@ impl AppHeadless {
         match result {
             Ok(AgentResult { success, message, trace: full_trace, compressed_trace }) => {
                 if trace {
-                    // Display comparison between compressed and full trace
-                    println!("========== COMPRESSED TRACE ({} messages) ==========", compressed_trace.len());
-                    println!("{}", serde_json::to_string_pretty(&compressed_trace)?);
-                    println!("\n========== FULL TRACE ({} messages) ==========", full_trace.len());
+                    #[cfg(debug_assertions)]
+                    {
+                        println!("{}", serde_json::to_string_pretty(&compressed_trace)?);
+                    }
                     println!("{}", serde_json::to_string_pretty(&full_trace)?);
                 } else {
                     if let Some(message) = full_trace.last() {
