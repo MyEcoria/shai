@@ -106,6 +106,64 @@ impl AgentCore {
         Ok(())
     }
 
+    /// Trigger manual context compression regardless of threshold
+    pub async fn check_and_compress_context_manual(&mut self) -> Result<(), AgentError> {
+        // Set state to Processing to block new messages
+        self.set_state(InternalAgentState::Processing {
+            task_name: "context_compression".to_string(),
+            tools_exec_at: Utc::now(),
+            cancellation_token: CancellationToken::new(),
+        }).await;
+
+        let brain = self.brain.clone();
+        let brain_read = brain.read().await;
+
+        use std::any::Any;
+
+        if let Some(coder_brain) = (&**brain_read as &dyn Any).downcast_ref::<crate::runners::coder::coder::CoderBrain>() {
+            if let Some(compressor) = &coder_brain.context_compressor {
+                let compressor_clone = compressor.clone();
+                drop(brain_read);
+
+                let trace = self.trace.read().await.clone();
+                let mut compressor_clone = compressor_clone;
+
+                // Force compression - manually call compress_messages_force
+                let (compressed_trace, compression_info) = compressor_clone.compress_messages_force(trace).await;
+
+                // Update the trace with compressed version
+                {
+                    let mut trace_write = self.trace.write().await;
+                    *trace_write = compressed_trace;
+                }
+
+                // Update the compressor in the brain
+                {
+                    let mut brain_write = brain.write().await;
+                    if let Some(coder_brain_mut) = (&mut **brain_write as &mut dyn Any).downcast_mut::<crate::runners::coder::coder::CoderBrain>() {
+                        coder_brain_mut.context_compressor = Some(compressor_clone);
+                    }
+                }
+
+                // Emit compression event if compression occurred
+                if let Some(compression_info) = compression_info {
+                    let _ = self.emit_event(AgentEvent::ContextCompressed {
+                        original_message_count: compression_info.original_message_count,
+                        compressed_message_count: compression_info.compressed_message_count,
+                        tokens_before: compression_info.tokens_before,
+                        current_tokens: compression_info.current_tokens,
+                        max_tokens: compression_info.max_tokens,
+                        ai_summary: compression_info.ai_summary,
+                    }).await;
+                }
+            }
+        }
+
+        // Return to Paused state after compression
+        self.set_state(InternalAgentState::Paused).await;
+        Ok(())
+    }
+
     /// Check if context compression is needed and apply it when task is complete
     async fn check_and_compress_context(&mut self) -> Result<(), AgentError> {
         // Extract compression logic from the brain if it's a CoderBrain
@@ -125,6 +183,13 @@ impl AgentCore {
                 let mut compressor_clone = compressor_clone;
 
                 if compressor_clone.should_compress_conversation(&trace) {
+                    // Set state to Processing to block new messages during compression
+                    self.set_state(InternalAgentState::Processing {
+                        task_name: "context_compression".to_string(),
+                        tools_exec_at: Utc::now(),
+                        cancellation_token: CancellationToken::new(),
+                    }).await;
+
                     let (compressed_trace, compression_info) = compressor_clone.compress_messages(trace).await;
 
                     // Update the trace with compressed version

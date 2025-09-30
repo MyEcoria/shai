@@ -45,10 +45,12 @@ pub enum InternalAgentEvent {
         response: UserResponse
     },
     /// Permission response received from controller
-    PermissionResponseReceived { 
+    PermissionResponseReceived {
         request_id: String,
         response: PermissionResponse
-    }
+    },
+    /// Manual context compression requested by user
+    ManualCompressionRequested
 }
 
 /// Public events emitted to external controllers/UI

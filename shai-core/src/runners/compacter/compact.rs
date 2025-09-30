@@ -94,6 +94,24 @@ impl ContextCompressor {
         should_compress
     }
 
+    /// Force compress the conversation history regardless of thresholds
+    /// Keeps the system message and recent messages while summarizing middle conversation
+    /// Returns (compressed_messages, compression_info)
+    pub async fn compress_messages_force(&mut self, messages: Vec<ChatMessage>) -> (Vec<ChatMessage>, Option<CompressionInfo>) {
+        // Count non-system messages to ensure we have something to compress
+        let non_system_count = messages.iter()
+            .filter(|msg| !matches!(msg, ChatMessage::System { .. }))
+            .count();
+
+        // Only compress if we have at least 2 messages (1 user-assistant pair)
+        if non_system_count <= 2 {
+            info!(target: "context_compression", "Not enough messages to compress (need > 2 non-system messages)");
+            return (messages, None);
+        }
+
+        self.compress_messages_internal(messages).await
+    }
+
     /// Compress the conversation history by removing older messages and replacing with AI summary
     /// Keeps the system message and recent messages while summarizing middle conversation
     /// Returns (compressed_messages, compression_info)
@@ -101,6 +119,12 @@ impl ContextCompressor {
         if !self.should_compress_conversation(&messages) {
             return (messages, None);
         }
+
+        self.compress_messages_internal(messages).await
+    }
+
+    /// Internal method that performs the actual compression
+    async fn compress_messages_internal(&mut self, messages: Vec<ChatMessage>) -> (Vec<ChatMessage>, Option<CompressionInfo>) {
 
         let original_count = messages.len();
         let tokens_before_compression = self.current_tokens;

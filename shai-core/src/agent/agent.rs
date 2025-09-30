@@ -432,7 +432,13 @@ impl AgentCore {
             AgentRequest::WaitTurn => {
                 self.handle_wait_turn(backchannel).await;
                 return Ok(()); // We handle the response in the spawned task
-            } 
+            }
+            AgentRequest::TriggerContextCompression => {
+                // Trigger context compression by calling the check_and_compress_context method
+                // We'll send a special internal event to trigger the compression
+                let _ = self.internal_tx.send(InternalAgentEvent::ManualCompressionRequested).map_err(|_| AgentError::SessionClosed)?;
+                Ok(AgentResponse::Ack)
+            }
         }.unwrap_or_else(|e| AgentResponse::Error { error: e.to_string() });
 
         // ignore if channel is closed
