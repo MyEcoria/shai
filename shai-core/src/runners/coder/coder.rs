@@ -8,7 +8,7 @@ use tracing::debug;
 use crate::agent::brain::ThinkerDecision;
 use crate::agent::{Agent, AgentBuilder, AgentError, Brain, ThinkerContext};
 use crate::tools::types::{ContainsAnyTool, IntoToolBox};
-use shai_llm::tool::LlmToolCall;
+use shai_llm::tool::{LlmToolCall, get_max_context};
 use crate::tools::{AnyTool, BashTool, EditTool, FetchTool, FindTool, LsTool, MultiEditTool, ReadTool, TodoReadTool, TodoWriteTool, WriteTool, TodoStorage, FsOperationLog};
 use crate::runners::compacter::ContextCompressor;
 use crate::config::config::ShaiConfig;
@@ -31,10 +31,11 @@ impl CoderBrain {
         // Try to get context limit from configuration
         let context_compressor = if let Ok(config) = ShaiConfig::load() {
             if let Some(provider_config) = config.get_selected_provider() {
-                provider_config.max_context_tokens.map(|max_tokens| {
+                {
+                    let max_tokens = get_max_context(&provider_config.model) as u32;
                     debug!(target: "brain::coder", max_context_tokens = max_tokens, "Initializing context compressor with AI summarization");
-                    ContextCompressor::new_with_llm(max_tokens, llm.clone(), model.clone())
-                })
+                    Some(ContextCompressor::new_with_llm(max_tokens, llm.clone(), model.clone()))
+                }
             } else {
                 None
             }
@@ -57,10 +58,11 @@ impl CoderBrain {
         // Try to get context limit from configuration
         let context_compressor = if let Ok(config) = ShaiConfig::load() {
             if let Some(provider_config) = config.get_selected_provider() {
-                provider_config.max_context_tokens.map(|max_tokens| {
+                {
+                    let max_tokens = get_max_context(&provider_config.model) as u32;
                     debug!(target: "brain::coder", max_context_tokens = max_tokens, "Initializing context compressor with AI summarization");
-                    ContextCompressor::new_with_llm(max_tokens, llm.clone(), model.clone())
-                })
+                    Some(ContextCompressor::new_with_llm(max_tokens, llm.clone(), model.clone()))
+                }
             } else {
                 None
             }

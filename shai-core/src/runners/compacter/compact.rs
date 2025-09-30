@@ -58,7 +58,7 @@ impl ContextCompressor {
     /// Check if we're approaching the context limit with dynamic threshold
     /// Uses different thresholds based on context size to avoid premature compression
     pub fn should_compress(&self) -> bool {
-        let threshold_percentage = 0.80;
+        let threshold_percentage = 0.90;
         let threshold = (self.max_tokens as f64 * threshold_percentage) as u32;
         self.current_tokens >= threshold
     }
