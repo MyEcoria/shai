@@ -47,6 +47,7 @@ impl AgentCore {
 
     /// Process a brain task result
     pub async fn process_next_step(&mut self, result: Result<ThinkerDecision, AgentError>) -> Result<(), AgentError> {
+        let _ = self.check_and_compress_context().await?;
         let ThinkerDecision{message, flow, token_usage, compression_info} = self.handle_brain_error(result).await?;
         let ChatMessage::Assistant { content, reasoning_content, tool_calls, .. } = message.clone() else {
             return self.handle_brain_error::<ThinkerDecision>(
@@ -57,8 +58,10 @@ impl AgentCore {
         // Add the message to trace
         info!(target: "agent::think", reasoning_content = ?reasoning_content, content = ?content);
         let trace = self.trace.clone();
+        let full_trace = self.full_trace.clone();
         trace.write().await.push(message.clone());
-        
+        full_trace.write().await.push(message.clone());
+
         // Emit event to external consumers
         let _ = self.emit_event(AgentEvent::BrainResult {
             timestamp: Utc::now(),
@@ -97,9 +100,7 @@ impl AgentCore {
             ThinkerFlowControl::AgentContinue => {
                 self.set_state(InternalAgentState::Running).await;
             }
-            ThinkerFlowControl::AgentPause => {
-                // Check if we need to compress context when task is complete
-                self.check_and_compress_context().await?;
+            ThinkerFlowControl::AgentPause => { 
                 self.set_state(InternalAgentState::Paused).await;
             }
         }
@@ -126,10 +127,11 @@ impl AgentCore {
                 drop(brain_read);
 
                 let trace = self.trace.read().await.clone();
+                let full_trace = self.full_trace.read().await.clone();
                 let mut compressor_clone = compressor_clone;
 
                 // Force compression - manually call compress_messages_force
-                let (compressed_trace, compression_info) = compressor_clone.compress_messages_force(trace).await;
+                let (compressed_trace, compression_info) = compressor_clone.compress_messages_force(trace, full_trace).await;
 
                 // Update the trace with compressed version
                 {
@@ -190,7 +192,8 @@ impl AgentCore {
                         cancellation_token: CancellationToken::new(),
                     }).await;
 
-                    let (compressed_trace, compression_info) = compressor_clone.compress_messages(trace).await;
+                    let full_trace = self.full_trace.read().await.clone();
+                    let (compressed_trace, compression_info) = compressor_clone.compress_messages(trace, full_trace).await;
 
                     // Update the trace with compressed version
                     {

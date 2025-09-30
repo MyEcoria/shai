@@ -1,47 +1,54 @@
-static COMPRESSION_SUMMARY_PROMPT: &str = r#"Generate a comprehensive summary of this conversation, focusing on capturing every detail necessary to seamlessly continue the work.
+static COMPRESSION_SUMMARY_PROMPT: &str = r#"You are compressing conversation history. Your summary will replace older messages, so it must contain ALL information needed to continue the task.
 
-Your summary must preserve:
-- All user requests and instructions (both completed and pending)
-- Technical decisions, code patterns, and architectural choices
-- The progression of work and problem-solving approaches
+**CRITICAL RULES:**
+1. Extract the FIRST user message from the conversation and reproduce it EXACTLY (word for word)
+2. List every file that was read, with key data extracted from each file
+3. List every action taken (reads, edits, tool calls, reasoning)
+4. Identify what the assistant was doing and what remains to be done
+5. Be factual and complete - losing information breaks the conversation flow
 
-Structure your summary as follows:
+**FORMAT YOUR SUMMARY LIKE THIS:**
 
-**Context**
+**Original user request (verbatim):**
+"[exact first user message here]"
 
-1. **Conversation Overview**: Provide a high-level narrative of the entire discussion, capturing the flow from initial objectives through all major topics and pivots.
+**Actions completed:**
+- Read file X: [key content/data from file]
+- Read file Y: [key content/data from file]
+- [any other actions taken]
 
-2. **Current Work Status**: Describe in detail the most recent task being addressed. Focus particularly on the latest messages to capture the immediate context before this summary request.
+**Key information extracted:**
+- [important data point 1]
+- [important data point 2]
+- [etc.]
 
-3. **Technical Details**: Document all relevant technical elements including:
-   - Technologies, frameworks, and libraries used
-   - Coding conventions and patterns established
-   - Architectural decisions and design principles
-   - Configuration settings and environment details
+**Current state:**
+[What was being done at the end of this conversation segment]
 
-4. **Files and Code References**: List all files, code sections, or resources that were:
-   - Examined or reviewed
-   - Modified or updated
-   - Created from scratch
-   Prioritize the most recently touched items.
+**Next steps:**
+[What remains to be done to complete the user's request]
 
-5. **Problem-Solving History**: Summarize:
-   - Issues that were identified and resolved
-   - Solutions that were implemented
-   - Debugging approaches that were attempted
-   - Any ongoing troubleshooting efforts
+**EXAMPLE:**
+If the user said "read file.txt and summarize it", and the assistant read the file containing "Hello World", your summary should be:
 
-6. **Outstanding Work and Next Actions**: 
-   - List all pending tasks explicitly requested by the user
-   - Outline the planned next steps for incomplete work
-   - Include verbatim quotes from recent messages showing the exact task in progress and where it was paused
-   - Add relevant code snippets where they provide clarity
+**Original user request (verbatim):**
+"read file.txt and summarize it"
 
-Output only the summary itself, with no preamble or meta-commentary.
+**Actions completed:**
+- Read file.txt: Contains "Hello World"
 
-Conversation to summarize:
-{}"#;
+**Key information extracted:**
+- file.txt content: "Hello World"
 
-pub fn get_compression_summary_prompt(conversation_text: &str) -> String {
-    COMPRESSION_SUMMARY_PROMPT.replace("{}", conversation_text)
+**Current state:**
+File has been read, summary needs to be provided to user
+
+**Next steps:**
+Provide summary of file.txt to the user
+
+---
+"#;
+
+pub fn get_compression_summary_prompt() -> String {
+    COMPRESSION_SUMMARY_PROMPT.to_string()
 }

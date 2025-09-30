@@ -97,7 +97,7 @@ impl ContextCompressor {
     /// Force compress the conversation history regardless of thresholds
     /// Keeps the system message and recent messages while summarizing middle conversation
     /// Returns (compressed_messages, compression_info)
-    pub async fn compress_messages_force(&mut self, messages: Vec<ChatMessage>) -> (Vec<ChatMessage>, Option<CompressionInfo>) {
+    pub async fn compress_messages_force(&mut self, messages: Vec<ChatMessage>, full_trace: Vec<ChatMessage>) -> (Vec<ChatMessage>, Option<CompressionInfo>) {
         // Count non-system messages to ensure we have something to compress
         let non_system_count = messages.iter()
             .filter(|msg| !matches!(msg, ChatMessage::System { .. }))
@@ -109,22 +109,22 @@ impl ContextCompressor {
             return (messages, None);
         }
 
-        self.compress_messages_internal(messages).await
+        self.compress_messages_internal(messages, full_trace).await
     }
 
     /// Compress the conversation history by removing older messages and replacing with AI summary
     /// Keeps the system message and recent messages while summarizing middle conversation
     /// Returns (compressed_messages, compression_info)
-    pub async fn compress_messages(&mut self, messages: Vec<ChatMessage>) -> (Vec<ChatMessage>, Option<CompressionInfo>) {
+    pub async fn compress_messages(&mut self, messages: Vec<ChatMessage>, full_trace: Vec<ChatMessage>) -> (Vec<ChatMessage>, Option<CompressionInfo>) {
         if !self.should_compress_conversation(&messages) {
             return (messages, None);
         }
 
-        self.compress_messages_internal(messages).await
+        self.compress_messages_internal(messages, full_trace).await
     }
 
     /// Internal method that performs the actual compression
-    async fn compress_messages_internal(&mut self, messages: Vec<ChatMessage>) -> (Vec<ChatMessage>, Option<CompressionInfo>) {
+    async fn compress_messages_internal(&mut self, messages: Vec<ChatMessage>, full_trace: Vec<ChatMessage>) -> (Vec<ChatMessage>, Option<CompressionInfo>) {
 
         let original_count = messages.len();
         let tokens_before_compression = self.current_tokens;
@@ -137,35 +137,66 @@ impl ContextCompressor {
             "Compressing context due to token limit"
         );
 
+        // Extract the most recent user message from the full conversation history (full_trace)
+        let first_user_message = full_trace.iter()
+            .rev()
+            .find_map(|msg| {
+                if let ChatMessage::User { content, .. } = msg {
+                    if let ChatMessageContent::Text(text) = content {
+                        return Some(text.clone());
+                    }
+                }
+                None
+            })
+            .unwrap_or_else(|| "[No user message found]".to_string());
+
         let mut compressed = Vec::new();
         let mut system_messages = Vec::new();
         let mut middle_messages = Vec::new();
         let mut recent_messages = Vec::new();
 
-        // Separate messages into categories
-        for (index, message) in messages.iter().enumerate() {
+        // First pass: filter out old summary messages and collect non-system messages
+        let non_summary_messages: Vec<ChatMessage> = messages.iter()
+            .filter(|msg| {
+                // Filter out old summary messages
+                !matches!(msg, ChatMessage::System { name: Some(name), .. } if name == "summary")
+            })
+            .cloned()
+            .collect();
+
+        // Second pass: categorize messages
+        let non_system_count = non_summary_messages.iter()
+            .filter(|msg| !matches!(msg, ChatMessage::System { .. }))
+            .count();
+
+        let mut non_system_index = 0;
+        for message in &non_summary_messages {
             match message {
                 ChatMessage::System { .. } => {
+                    // Keep non-summary system messages (like the original system prompt)
                     system_messages.push(message.clone());
                 }
                 _ => {
-                    // Keep only the last 2 messages (1 user-assistant pair) as recent
-                    // Everything else goes to middle_messages for summarization
-                    if index >= messages.len().saturating_sub(2) {
+                    // Keep the last 6 non-system messages (2-3 complete interaction cycles) as recent
+                    // This ensures we preserve enough context for the agent to understand
+                    // what it was doing and avoid repeating actions
+                    if non_system_index >= non_system_count.saturating_sub(6) {
                         recent_messages.push(message.clone());
                     } else {
                         middle_messages.push(message.clone());
                     }
+                    non_system_index += 1;
                 }
             }
         }
 
-        // Add system messages first
+        // Add system messages first (excluding old summaries)
         compressed.extend(system_messages);
 
         // Try to generate AI summary of middle conversation
+        // Pass all non-summary messages and the first user message from full_trace
         let (ai_summary, summary_tokens) = if !middle_messages.is_empty() {
-            match self.summarize_conversation(&middle_messages).await {
+            match self.summarize_conversation(&non_summary_messages, &first_user_message).await {
                 Ok((summary, tokens)) => {
                     info!(target: "context_compression", "Successfully generated AI summary");
                     compressed.push(ChatMessage::System {
@@ -194,6 +225,8 @@ impl ContextCompressor {
 
         // Add recent messages
         compressed.extend(recent_messages);
+
+        self.current_tokens = summary_tokens;
 
         // Safely create compression info with validation
         let compression_info = CompressionInfo {
@@ -236,7 +269,7 @@ impl ContextCompressor {
 
     /// Create a summary of the conversation history using AI
     /// Returns (summary_text, summary_tokens_used)
-    async fn summarize_conversation(&mut self, messages: &[ChatMessage]) -> Result<(String, u32), String> {
+    async fn summarize_conversation(&mut self, messages: &[ChatMessage], first_user_message: &str) -> Result<(String, u32), String> {
         let Some(ref llm_client) = self.llm_client else {
             return Err("No LLM client available for summarization".to_string());
         };
@@ -262,7 +295,7 @@ impl ContextCompressor {
                 ChatMessage::System { content, .. } => {
                     if let ChatMessageContent::Text(text) = content {
                         // Skip system prompts in summary, only include actual system messages
-                        if !text.contains("CODER_BASE_PROMPT") && !text.contains("You are") {
+                        if !text.contains("CODER_BASE_PROMPT") {
                             conversation_text.push_str(&format!("System: {}\n", text));
                         }
                     }
@@ -271,15 +304,21 @@ impl ContextCompressor {
             }
         }
 
-        let summary_prompt = get_compression_summary_prompt(&conversation_text);
+        let summary_prompt = get_compression_summary_prompt();
 
         let summary_request = ChatCompletionParametersBuilder::default()
             .model(model)
-            .messages(vec![ChatMessage::User {
-                content: ChatMessageContent::Text(summary_prompt),
-                name: None,
-            }])
-            .temperature(0.1) // Low temperature for consistent summaries
+            .messages(vec![
+                ChatMessage::System {
+                    content: ChatMessageContent::Text(summary_prompt.to_string()),
+                    name: None,
+                },
+                ChatMessage::User {
+                    content: ChatMessageContent::Text(format!("Original user request: \"{}\"\n\nFull conversation:\n{}", first_user_message, conversation_text)),
+                    name: None,
+                },
+            ])
+            .temperature(0.1)
             .build()
             .map_err(|e| format!("Failed to build summary request: {}", e))?;
 
@@ -338,8 +377,8 @@ mod tests {
         assert!(compressor.should_compress());
     }
 
-    #[test]
-    fn test_message_compression() {
+    #[tokio::test]
+    async fn test_message_compression() {
         let mut compressor = ContextCompressor::new(1000);
         compressor.current_tokens = 850; // Above 80% threshold
 
@@ -374,7 +413,7 @@ mod tests {
             },
         ];
 
-        let compressed = compressor.compress_messages(messages);
+        let (compressed, _info) = compressor.compress_messages(messages).await;
 
         // Should contain: system message, compression notice, recent messages
         assert!(compressed.len() >= 4);
