@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use std::thread;
 use std::io::{self, Read, Write};
 use std::sync::atomic::{AtomicI32, Ordering};
+use libc::c_char;
 use tempfile::NamedTempFile;
 
 use crate::fc::server::ShaiSessionServer;
@@ -96,7 +97,7 @@ impl ShaiPtyManager {
 
         let slave_fd = unsafe { 
             libc::open(
-                slave_name.as_ptr() as *const i8, 
+                slave_name.as_ptr() as *const c_char, 
                 libc::O_RDWR | libc::O_NOCTTY
             ) 
         };
