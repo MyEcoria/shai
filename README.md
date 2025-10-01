@@ -16,7 +16,7 @@ curl -fsSL https://raw.githubusercontent.com/ovh/shai/main/install.sh | sh
 
 the `shai` binary will be installed in `$HOME/.local/bin`
 
-### install ``unstable`` version
+### install ``nightly`` version
 
 Install the last [``unstable``](https://github.com/ovh/shai/releases/tag/unstable) version with the following command:
 
@@ -36,10 +36,6 @@ shai auth
 ```
 
 ![shai auth](./docs/assets/auth.gif)
-
-## Project context file
-
-You can create a `SHAI.md` file at the root of your project containing any information you want Shai to know about the project (architecture, build steps, important directories, etc.). Shai will automatically load this file as additional context.
 
 Once you have a provider set up, you can run shai:
 
@@ -74,6 +70,12 @@ echo "make me a hello world in main.py" | shai --trace | shai "now run it!"
 ```
 
 ![shai headless](./docs/assets/shai-chain.gif)
+
+
+## Project context file
+
+You can create a `SHAI.md` file at the root of your project containing any information you want Shai to know about the project (architecture, build steps, important directories, etc.). Shai will automatically load this file as additional context.
+
 
 ## Custom Agent (with MCP)
 

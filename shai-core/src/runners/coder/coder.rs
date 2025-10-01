@@ -79,19 +79,11 @@ impl Brain for CoderBrain {
                 .map_err(|e| AgentError::LlmError(e.to_string()))?;
 
         // Extract token usage information
-        let token_usage = if let Some(usage) = &brain_decision.usage {
+        let token_usage = brain_decision.usage.as_ref().map(|usage| {
             let input = usage.prompt_tokens.unwrap_or(0);
             let output = usage.completion_tokens.unwrap_or(0);
-            debug!(target: "brain::coder::tokens",
-                input_tokens = input,
-                output_tokens = output,
-                total_tokens = usage.total_tokens,
-                "Token usage for LLM call"
-            );
-            Some((input, output))
-        } else {
-            None
-        };
+            (input, output)
+        });
 
         // stop here if there's no other tool calls
         let message = brain_decision.choices.into_iter().next().unwrap().message;
