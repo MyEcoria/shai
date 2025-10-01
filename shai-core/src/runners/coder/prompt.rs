@@ -151,8 +151,9 @@ pub fn render_system_prompt_template(template: &str) -> String {
         let content = SHAI_CONTENT.get_or_init(|| fs::read_to_string("SHAI.md").unwrap_or_default());
 
         if !content.is_empty() {
-            result = result.replace("{{SHAI_PROMPT}}", SHAI_PROMPT);
-            result = result.replace("{{SHAI}}", content);
+            result = result
+                .replace("{{SHAI_PROMPT}}", SHAI_PROMPT)
+                .replace("{{SHAI}}", content);
         } else {
             result = result.replace("{{SHAI_PROMPT}}", "");
         }
