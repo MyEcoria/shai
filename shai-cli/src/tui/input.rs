@@ -1,4 +1,5 @@
 use std::time::{Instant, Duration};
+use std::path::PathBuf;
 
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use futures::io;
@@ -8,7 +9,7 @@ use ratatui::{
     style::{Color, Style, Stylize},
     symbols::border,
     text::{Line, Span},
-    widgets::{Block, Borders, Padding, Paragraph, Widget},
+    widgets::{Block, Borders, Padding, Paragraph, Widget, List, ListItem},
     Frame,
 };
 use shai_core::agent::{AgentController, AgentEvent, PublicAgentState};
@@ -31,7 +32,7 @@ pub enum UserAction {
 }
 
 pub struct InputArea<'a> {
-    agent_running: bool, 
+    agent_running: bool,
 
     // input text
     input: TextArea<'a>,
@@ -61,6 +62,11 @@ pub struct InputArea<'a> {
 
     history: Vec<String>,
     history_index: usize,
+
+    // file suggestions
+    file_suggestions: Vec<String>,
+    suggestion_index: Option<usize>,
+    suggestion_search: Option<String>,
 }
 
 impl Default for InputArea<'_> {
@@ -83,6 +89,9 @@ impl Default for InputArea<'_> {
             cmdnav: CommandNav{},
             history: Vec::new(),
             history_index: 0,
+            file_suggestions: Vec::new(),
+            suggestion_index: None,
+            suggestion_search: None,
         }
     }
 }
@@ -95,6 +104,85 @@ impl InputArea<'_> {
     pub fn set_history(&mut self, history: Vec<String>) {
         self.history = history;
         self.history_index = self.history.len();
+    }
+
+    // Detect if cursor is after a @ and extract the search text
+    fn detect_file_search(&self) -> Option<(usize, String)> {
+        let (row, col) = self.input.cursor();
+        let line = self.input.lines().get(row)?;
+
+        // Use character indices, not byte indices
+        let chars: Vec<char> = line.chars().collect();
+        let col_safe = col.min(chars.len());
+
+        // Look for the last @ before the cursor
+        let before_cursor: String = chars.iter().take(col_safe).collect();
+        if let Some(at_pos) = before_cursor.rfind('@') {
+            // Check there's no space between @ and cursor
+            let after_at: String = before_cursor.chars().skip(at_pos + 1).collect();
+            if !after_at.contains(' ') {
+                // Return position in character count (not bytes)
+                let at_char_pos = before_cursor.chars().take(at_pos).count();
+                return Some((at_char_pos, after_at));
+            }
+        }
+        None
+    }
+
+    // Search files matching the pattern
+    fn search_files(&self, pattern: &str) -> Vec<String> {
+        use std::fs;
+        use std::path::Path;
+
+        let mut results = Vec::new();
+        let pattern_lower = pattern.to_lowercase();
+
+        // Recursive function to walk directories
+        fn walk_dir(dir: &Path, pattern: &str, results: &mut Vec<String>, depth: usize) {
+            if depth > 5 { return; }
+
+            if let Ok(entries) = fs::read_dir(dir) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    let file_name = path.file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("");
+
+                    if path.is_file() {
+                        let path_str = path.to_string_lossy().to_string();
+                        if pattern.is_empty() || path_str.to_lowercase().contains(pattern) {
+                            results.push(path_str);
+                            if results.len() >= 10 { return; }
+                        }
+                    } else if path.is_dir() {
+                        walk_dir(&path, pattern, results, depth + 1);
+                        if results.len() >= 10 { return; }
+                    }
+                }
+            }
+        }
+
+        walk_dir(Path::new("."), &pattern_lower, &mut results, 0);
+        results
+    }
+
+    // Update suggestions based on current input
+    fn update_suggestions(&mut self) {
+        if let Some((at_pos, search)) = self.detect_file_search() {
+            if self.suggestion_search.as_ref() != Some(&search) {
+                self.suggestion_search = Some(search.clone());
+                self.file_suggestions = self.search_files(&search);
+                self.suggestion_index = if self.file_suggestions.is_empty() {
+                    None
+                } else {
+                    Some(0)
+                };
+            }
+        } else {
+            self.file_suggestions.clear();
+            self.suggestion_index = None;
+            self.suggestion_search = None;
+        }
     }
 }
 
@@ -326,10 +414,18 @@ impl InputArea<'_> {
                 return UserAction::Nope;
             }
             KeyCode::Up => {
+                // If we have suggestions, navigate through them
+                if !self.file_suggestions.is_empty() {
+                    if let Some(idx) = self.suggestion_index {
+                        self.suggestion_index = Some(if idx > 0 { idx - 1 } else { self.file_suggestions.len() - 1 });
+                    }
+                    return UserAction::Nope;
+                }
+
                 // Get current cursor position
                 let (cursor_row, _) = self.input.cursor();
                 let is_empty = self.input.lines().iter().all(|line| line.is_empty());
-                
+
                 // Navigate history only if:
                 // 1. Input is empty, OR
                 // 2. Cursor is at the first line
@@ -338,7 +434,7 @@ impl InputArea<'_> {
                         let current_text = self.input.lines().join("\n");
                         self.current_draft = Some(current_text);
                     }
-                    
+
                     self.history_index -= 1;
                     self.load_historic_prompt(self.history_index);
                 } else if !is_empty && cursor_row > 0 {
@@ -346,11 +442,19 @@ impl InputArea<'_> {
                 }
             }
             KeyCode::Down => {
+                // If we have suggestions, navigate through them
+                if !self.file_suggestions.is_empty() {
+                    if let Some(idx) = self.suggestion_index {
+                        self.suggestion_index = Some((idx + 1) % self.file_suggestions.len());
+                    }
+                    return UserAction::Nope;
+                }
+
                 // Get current cursor position
                 let (cursor_row, _) = self.input.cursor();
                 let is_empty = self.input.lines().iter().all(|line| line.is_empty());
                 let line_count = self.input.lines().len();
-                
+
                 // Navigate history only if:
                 // 1. Cursor is at the last line
                 if !self.history.is_empty() && (is_empty || cursor_row == line_count - 1) {
@@ -372,6 +476,15 @@ impl InputArea<'_> {
                     self.input.move_cursor(tui_textarea::CursorMove::Down);
                 }
             }
+            KeyCode::Tab if !self.file_suggestions.is_empty() => {
+                // Tab to select current suggestion
+                if let Some(idx) = self.suggestion_index {
+                    if let Some(file_path) = self.file_suggestions.get(idx).cloned() {
+                        self.replace_file_search(&file_path);
+                    }
+                }
+                return UserAction::Nope;
+            }
             _ => {
                 // Convert to ratatui event format for tui-textarea
                 self.help = None;
@@ -380,7 +493,40 @@ impl InputArea<'_> {
                 self.input.input(input);
             }
         }
+
+        // Update suggestions after each keystroke
+        self.update_suggestions();
+
         UserAction::Nope
+    }
+
+    // Replace @search with the file path
+    fn replace_file_search(&mut self, file_path: &str) {
+        if let Some((at_pos, search_text)) = self.detect_file_search() {
+            let (row, _) = self.input.cursor();
+
+            // Calculate how many characters to delete (@ + search text)
+            let chars_to_delete = 1 + search_text.len(); // @ + text after
+
+            // Move cursor to @ position
+            self.input.move_cursor(tui_textarea::CursorMove::Head);
+            for _ in 0..at_pos {
+                self.input.move_cursor(tui_textarea::CursorMove::Forward);
+            }
+
+            // Delete @ + search text
+            for _ in 0..chars_to_delete {
+                self.input.delete_next_char();
+            }
+
+            // Insert file path
+            self.input.insert_str(file_path);
+
+            // Reset suggestions
+            self.file_suggestions.clear();
+            self.suggestion_index = None;
+            self.suggestion_search = None;
+        }
     }
 }
 
@@ -388,16 +534,28 @@ impl InputArea<'_> {
 /// drawing logic
 impl InputArea<'_> {
     pub fn height(&self) -> u16 {
-        // +2 for top/bottom borders  
+        // +2 for top/bottom borders
         // +N for lines inside input
         // +1 for helper text below input
-        self.input.lines().len().max(1) as u16 + 4 + self.help.as_ref().map_or(0, |h| h.height())
+        let suggestions_height = if !self.file_suggestions.is_empty() {
+            self.file_suggestions.len().min(5) as u16 + 2
+        } else {
+            0
+        };
+        self.input.lines().len().max(1) as u16 + 4 + self.help.as_ref().map_or(0, |h| h.height()) + suggestions_height
     }
 
     pub fn draw(&mut self, f: &mut Frame, area: Rect) {
-        let [status, input_area, helper, help_area] = Layout::vertical([
+        let suggestions_height = if !self.file_suggestions.is_empty() {
+            self.file_suggestions.len().min(5) as u16 + 2
+        } else {
+            0
+        };
+
+        let [status, input_area, suggestions_area, helper, help_area] = Layout::vertical([
             Constraint::Length(1),
-            Constraint::Length(self.height() - 2), 
+            Constraint::Length(self.height() - 2 - suggestions_height),
+            Constraint::Length(suggestions_height),
             Constraint::Length(1),
             Constraint::Length(self.help.as_ref().map_or(0, |h| h.height()))
         ]).areas(area);
@@ -446,6 +604,31 @@ impl InputArea<'_> {
             Span::styled(self.method_str(), Style::default().fg(Color::DarkGray)), 
             helper_right
         );
+
+        // File suggestions
+        if !self.file_suggestions.is_empty() {
+            let items: Vec<ListItem> = self.file_suggestions
+                .iter()
+                .enumerate()
+                .map(|(i, path)| {
+                    let style = if Some(i) == self.suggestion_index {
+                        Style::default().fg(Color::Yellow).bg(Color::DarkGray)
+                    } else {
+                        Style::default().fg(Color::White)
+                    };
+                    ListItem::new(path.as_str()).style(style)
+                })
+                .collect();
+
+            let suggestions_list = List::new(items)
+                .block(Block::default()
+                    .borders(Borders::ALL)
+                    .border_set(border::ROUNDED)
+                    .border_style(Style::default().fg(Color::DarkGray))
+                    .title("Files"));
+
+            f.render_widget(suggestions_list, suggestions_area);
+        }
 
         // help
         if let Some(help) = &self.help {
