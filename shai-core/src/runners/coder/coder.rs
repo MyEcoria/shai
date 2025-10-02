@@ -118,7 +118,7 @@ impl Brain for CoderBrain {
                 .map_err(|e| AgentError::LlmError(e.to_string()))?;
 
         // Extract token usage information
-        let token_usage = brain_decision.usage.as_ref().map(|usage| {
+        let token_usage = if let Some(usage) = &brain_decision.usage {
             let input = usage.prompt_tokens.unwrap_or(0);
             let output = usage.completion_tokens.unwrap_or(0);
             debug!(target: "brain::coder::tokens",
