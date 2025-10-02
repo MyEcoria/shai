@@ -392,7 +392,7 @@ impl InputArea<'_> {
                 self.input.input(event);
                 return UserAction::Nope;
             }
-            KeyCode::Enter => {   
+            KeyCode::Enter => {
                 // Alt+Enter creates a new line immediately
                 if key_event.modifiers.contains(KeyModifiers::ALT) {
                     self.last_keystroke_time = Some(now);
@@ -408,7 +408,12 @@ impl InputArea<'_> {
                     self.input.input(event);
                     return UserAction::Nope;
                 }
-                
+
+                // Clear suggestions on Enter so message can be sent
+                self.file_suggestions.clear();
+                self.suggestion_index = None;
+                self.suggestion_search = None;
+
                 // Regular Enter - set pending and wait
                 self.pending_enter = Some(now);
                 return UserAction::Nope;
