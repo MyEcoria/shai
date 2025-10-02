@@ -292,12 +292,12 @@ impl ContextCompressor {
                         conversation_text.push_str(&format!("Assistant: {}\n", text));
                     }
                 }
+                ChatMessage::Tool { content, .. } => {
+                    conversation_text.push_str(&format!("Tool: {}\n", content));
+                }
                 ChatMessage::System { content, .. } => {
                     if let ChatMessageContent::Text(text) = content {
-                        // Skip system prompts in summary, only include actual system messages
-                        if !text.contains("CODER_BASE_PROMPT") {
-                            conversation_text.push_str(&format!("System: {}\n", text));
-                        }
+                        conversation_text.push_str(&format!("System: {}\n", text));
                     }
                 }
                 _ => {} // Skip other message types
