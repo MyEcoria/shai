@@ -132,13 +132,13 @@ impl InputArea<'_> {
     // Search files matching the pattern - optimized with jwalk
     fn search_files(&self, pattern: &str) -> Vec<String> {
         let pattern_lower = pattern.to_lowercase();
+        let include_hidden = pattern.starts_with('.');
         
         WalkDir::new(".")
             .max_depth(5)
-            .skip_hidden(false)
+            .skip_hidden(!include_hidden)
             .into_iter()
             .filter_map(|e| e.ok())
-            .filter(|e| e.file_type().is_file())
             .filter_map(|e| {
                 let path = e.path();
                 let path_str = path.to_string_lossy().to_string();
