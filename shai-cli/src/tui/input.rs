@@ -1,9 +1,9 @@
 use std::time::{Instant, Duration};
-use std::path::PathBuf;
 
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use futures::io;
 use cli_clipboard::{ClipboardContext, ClipboardProvider};
+use jwalk::WalkDir;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Style, Stylize},
@@ -129,41 +129,28 @@ impl InputArea<'_> {
         None
     }
 
-    // Search files matching the pattern
+    // Search files matching the pattern - optimized with jwalk
     fn search_files(&self, pattern: &str) -> Vec<String> {
-        use std::fs;
-        use std::path::Path;
-
-        let mut results = Vec::new();
         let pattern_lower = pattern.to_lowercase();
-
-        // Recursive function to walk directories
-        fn walk_dir(dir: &Path, pattern: &str, results: &mut Vec<String>, depth: usize) {
-            if depth > 5 { return; }
-
-            if let Ok(entries) = fs::read_dir(dir) {
-                for entry in entries.flatten() {
-                    let path = entry.path();
-                    let file_name = path.file_name()
-                        .and_then(|n| n.to_str())
-                        .unwrap_or("");
-
-                    if path.is_file() {
-                        let path_str = path.to_string_lossy().to_string();
-                        if pattern.is_empty() || path_str.to_lowercase().contains(pattern) {
-                            results.push(path_str);
-                            if results.len() >= 10 { return; }
-                        }
-                    } else if path.is_dir() {
-                        walk_dir(&path, pattern, results, depth + 1);
-                        if results.len() >= 10 { return; }
-                    }
+        
+        WalkDir::new(".")
+            .max_depth(5)
+            .skip_hidden(false)
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_type().is_file())
+            .filter_map(|e| {
+                let path = e.path();
+                let path_str = path.to_string_lossy().to_string();
+                
+                if pattern.is_empty() || path_str.to_lowercase().contains(&pattern_lower) {
+                    Some(path_str)
+                } else {
+                    None
                 }
-            }
-        }
-
-        walk_dir(Path::new("."), &pattern_lower, &mut results, 0);
-        results
+            })
+            .take(10)
+            .collect()
     }
 
     // Update suggestions based on current input
@@ -409,6 +396,13 @@ impl InputArea<'_> {
                     return UserAction::Nope;
                 }
 
+                // Tab to select current suggestion
+                if let Some(idx) = self.suggestion_index {
+                    if let Some(file_path) = self.file_suggestions.get(idx).cloned() {
+                        self.replace_file_search(&file_path);
+                    }
+                    return UserAction::Nope;
+                }
                 // Clear suggestions on Enter so message can be sent
                 self.file_suggestions.clear();
                 self.suggestion_index = None;
@@ -480,15 +474,6 @@ impl InputArea<'_> {
                 } else if !is_empty && cursor_row < line_count - 1 {
                     self.input.move_cursor(tui_textarea::CursorMove::Down);
                 }
-            }
-            KeyCode::Tab if !self.file_suggestions.is_empty() => {
-                // Tab to select current suggestion
-                if let Some(idx) = self.suggestion_index {
-                    if let Some(file_path) = self.file_suggestions.get(idx).cloned() {
-                        self.replace_file_search(&file_path);
-                    }
-                }
-                return UserAction::Nope;
             }
             _ => {
                 // Convert to ratatui event format for tui-textarea
