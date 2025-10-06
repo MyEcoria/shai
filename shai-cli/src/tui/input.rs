@@ -1,4 +1,6 @@
 use std::time::{Instant, Duration};
+use std::fs;
+use std::path::Path;
 
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use futures::io;
@@ -67,6 +69,9 @@ pub struct InputArea<'a> {
     file_suggestions: Vec<String>,
     suggestion_index: Option<usize>,
     suggestion_search: Option<String>,
+
+    // gitignore patterns (loaded once)
+    gitignore_patterns: Vec<String>,
 }
 
 impl Default for InputArea<'_> {
@@ -92,6 +97,7 @@ impl Default for InputArea<'_> {
             file_suggestions: Vec::new(),
             suggestion_index: None,
             suggestion_search: None,
+            gitignore_patterns: Self::load_gitignore_patterns(),
         }
     }
 }
@@ -104,6 +110,53 @@ impl InputArea<'_> {
     pub fn set_history(&mut self, history: Vec<String>) {
         self.history = history;
         self.history_index = self.history.len();
+    }
+
+    // Parse .gitignore and return list of patterns to ignore
+    fn load_gitignore_patterns() -> Vec<String> {
+        if let Ok(content) = fs::read_to_string(".gitignore") {
+            content
+                .lines()
+                .filter_map(|line| {
+                    let trimmed = line.trim();
+                    if trimmed.is_empty() || trimmed.starts_with('#') {
+                        None
+                    } else {
+                        Some(trimmed.to_string())
+                    }
+                })
+                .collect()
+        } else {
+            Vec::new()
+        }
+    }
+
+    // Check if a path should be ignored based on gitignore patterns
+    fn should_ignore(path: &str, patterns: &[String]) -> bool {
+        for pattern in patterns {
+            let pattern_clean = pattern.trim_start_matches("./");
+            
+            if path.contains(pattern_clean) {
+                return true;
+            }
+            
+            if pattern.ends_with('/') {
+                let dir_pattern = pattern.trim_end_matches('/');
+                if path.contains(dir_pattern) {
+                    return true;
+                }
+            }
+            
+            if pattern.contains('*') {
+                let parts: Vec<&str> = pattern.split('*').collect();
+                if parts.len() == 2 {
+                    if path.contains(parts[0]) && path.ends_with(parts[1]) {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
     }
 
     // Detect if cursor is after a @ and extract the search text
@@ -129,7 +182,7 @@ impl InputArea<'_> {
         None
     }
 
-    // Search files matching the pattern - optimized with jwalk
+    // Search files matching the pattern - optimized with jwalk and respecting .gitignore
     fn search_files(&self, pattern: &str) -> Vec<String> {
         let pattern_lower = pattern.to_lowercase();
         let include_hidden = pattern.starts_with('.');
@@ -143,13 +196,18 @@ impl InputArea<'_> {
                 let path = e.path();
                 let path_str = path.to_string_lossy().to_string();
                 
+                // Skip if matches gitignore patterns
+                if Self::should_ignore(&path_str, &self.gitignore_patterns) {
+                    return None;
+                }
+                
                 if pattern.is_empty() || path_str.to_lowercase().contains(&pattern_lower) {
                     Some(path_str)
                 } else {
                     None
                 }
             })
-            .take(10)
+            .take(20)
             .collect()
     }
 
@@ -597,11 +655,27 @@ impl InputArea<'_> {
 
         // File suggestions
         if !self.file_suggestions.is_empty() {
-            let items: Vec<ListItem> = self.file_suggestions
+            let max_visible = 5;
+            let total = self.file_suggestions.len();
+            let selected = self.suggestion_index.unwrap_or(0);
+            
+            // Calculate scrolling window
+            let start = if total <= max_visible {
+                0
+            } else {
+                // Center the selected item in the window when possible
+                let ideal_start = selected.saturating_sub(max_visible / 2);
+                ideal_start.min(total.saturating_sub(max_visible))
+            };
+            
+            let end = (start + max_visible).min(total);
+            
+            let items: Vec<ListItem> = self.file_suggestions[start..end]
                 .iter()
                 .enumerate()
-                .map(|(i, path)| {
-                    let style = if Some(i) == self.suggestion_index {
+                .map(|(window_idx, path)| {
+                    let actual_idx = start + window_idx;
+                    let style = if Some(actual_idx) == self.suggestion_index {
                         Style::default().fg(Color::Yellow).bg(Color::DarkGray)
                     } else {
                         Style::default().fg(Color::White)
@@ -610,12 +684,18 @@ impl InputArea<'_> {
                 })
                 .collect();
 
+            let title = if total > max_visible {
+                format!("Files ({}/{})", selected + 1, total)
+            } else {
+                "Files".to_string()
+            };
+
             let suggestions_list = List::new(items)
                 .block(Block::default()
                     .borders(Borders::ALL)
                     .border_set(border::ROUNDED)
                     .border_style(Style::default().fg(Color::DarkGray))
-                    .title("Files"));
+                    .title(title));
 
             f.render_widget(suggestions_list, suggestions_area);
         }
