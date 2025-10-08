@@ -81,7 +81,7 @@ You can create a `SHAI.md` file at the root of your project containing any infor
 
 Instead of a single global configuration, you can create custom agent in a separate configuration.
 
-`example.config` contains an example of a custom configuration with an stdio MCP server configured.
+[`.ovh.config`](./.ovh.config) contains an example of a custom configuration with an remote MCP server configured.
 
 Place this file in `~/.config/shai/agents/example.config`, you can then list the agents available with:
 
@@ -92,7 +92,7 @@ shai agent list
 you can run shai with this specific agent with the `agent` subcommand:
 
 ```
-shai example
+shai agent example
 ```
 
 ## shell assistant
