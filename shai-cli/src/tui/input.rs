@@ -1,14 +1,17 @@
 use std::time::{Instant, Duration};
+use std::fs;
+use std::path::Path;
 
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use futures::io;
 use cli_clipboard::{ClipboardContext, ClipboardProvider};
+use jwalk::WalkDir;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Style, Stylize},
     symbols::border,
     text::{Line, Span},
-    widgets::{Block, Borders, Padding, Paragraph, Widget},
+    widgets::{Block, Borders, Padding, Paragraph, Widget, List, ListItem},
     Frame,
 };
 use shai_core::agent::{AgentController, AgentEvent, PublicAgentState};
@@ -31,7 +34,7 @@ pub enum UserAction {
 }
 
 pub struct InputArea<'a> {
-    agent_running: bool, 
+    agent_running: bool,
 
     // input text
     input: TextArea<'a>,
@@ -61,6 +64,14 @@ pub struct InputArea<'a> {
 
     history: Vec<String>,
     history_index: usize,
+
+    // file suggestions
+    file_suggestions: Vec<String>,
+    suggestion_index: Option<usize>,
+    suggestion_search: Option<String>,
+
+    // gitignore patterns (loaded once)
+    gitignore_patterns: Vec<String>,
 }
 
 impl Default for InputArea<'_> {
@@ -83,6 +94,10 @@ impl Default for InputArea<'_> {
             cmdnav: CommandNav{},
             history: Vec::new(),
             history_index: 0,
+            file_suggestions: Vec::new(),
+            suggestion_index: None,
+            suggestion_search: None,
+            gitignore_patterns: Self::load_gitignore_patterns(),
         }
     }
 }
@@ -95,6 +110,124 @@ impl InputArea<'_> {
     pub fn set_history(&mut self, history: Vec<String>) {
         self.history = history;
         self.history_index = self.history.len();
+    }
+
+    // Parse .gitignore and return list of patterns to ignore
+    fn load_gitignore_patterns() -> Vec<String> {
+        if let Ok(content) = fs::read_to_string(".gitignore") {
+            content
+                .lines()
+                .filter_map(|line| {
+                    let trimmed = line.trim();
+                    if trimmed.is_empty() || trimmed.starts_with('#') {
+                        None
+                    } else {
+                        Some(trimmed.to_string())
+                    }
+                })
+                .collect()
+        } else {
+            Vec::new()
+        }
+    }
+
+    // Check if a path should be ignored based on gitignore patterns
+    fn should_ignore(path: &str, patterns: &[String]) -> bool {
+        for pattern in patterns {
+            let pattern_clean = pattern.trim_start_matches("./");
+            
+            if path.contains(pattern_clean) {
+                return true;
+            }
+            
+            if pattern.ends_with('/') {
+                let dir_pattern = pattern.trim_end_matches('/');
+                if path.contains(dir_pattern) {
+                    return true;
+                }
+            }
+            
+            if pattern.contains('*') {
+                let parts: Vec<&str> = pattern.split('*').collect();
+                if parts.len() == 2 {
+                    if path.contains(parts[0]) && path.ends_with(parts[1]) {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
+    }
+
+    // Detect if cursor is after a @ and extract the search text
+    fn detect_file_search(&self) -> Option<(usize, String)> {
+        let (row, col) = self.input.cursor();
+        let line = self.input.lines().get(row)?;
+
+        // Use character indices, not byte indices
+        let chars: Vec<char> = line.chars().collect();
+        let col_safe = col.min(chars.len());
+
+        // Look for the last @ before the cursor
+        let before_cursor: String = chars.iter().take(col_safe).collect();
+        if let Some(at_pos) = before_cursor.rfind('@') {
+            // Check there's no space between @ and cursor
+            let after_at: String = before_cursor.chars().skip(at_pos + 1).collect();
+            if !after_at.contains(' ') {
+                // Return position in character count (not bytes)
+                let at_char_pos = before_cursor.chars().take(at_pos).count();
+                return Some((at_char_pos, after_at));
+            }
+        }
+        None
+    }
+
+    // Search files matching the pattern - optimized with jwalk and respecting .gitignore
+    fn search_files(&self, pattern: &str) -> Vec<String> {
+        let pattern_lower = pattern.to_lowercase();
+        let include_hidden = pattern.starts_with('.');
+        
+        WalkDir::new(".")
+            .max_depth(5)
+            .skip_hidden(!include_hidden)
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .filter_map(|e| {
+                let path = e.path();
+                let path_str = path.to_string_lossy().to_string();
+                
+                // Skip if matches gitignore patterns
+                if Self::should_ignore(&path_str, &self.gitignore_patterns) {
+                    return None;
+                }
+                
+                if pattern.is_empty() || path_str.to_lowercase().contains(&pattern_lower) {
+                    Some(path_str)
+                } else {
+                    None
+                }
+            })
+            .take(20)
+            .collect()
+    }
+
+    // Update suggestions based on current input
+    fn update_suggestions(&mut self) {
+        if let Some((at_pos, search)) = self.detect_file_search() {
+            if self.suggestion_search.as_ref() != Some(&search) {
+                self.suggestion_search = Some(search.clone());
+                self.file_suggestions = self.search_files(&search);
+                self.suggestion_index = if self.file_suggestions.is_empty() {
+                    None
+                } else {
+                    Some(0)
+                };
+            }
+        } else {
+            self.file_suggestions.clear();
+            self.suggestion_index = None;
+            self.suggestion_search = None;
+        }
     }
 }
 
@@ -304,7 +437,7 @@ impl InputArea<'_> {
                 self.input.input(event);
                 return UserAction::Nope;
             }
-            KeyCode::Enter => {   
+            KeyCode::Enter => {
                 // Alt+Enter creates a new line immediately
                 if key_event.modifiers.contains(KeyModifiers::ALT) {
                     self.last_keystroke_time = Some(now);
@@ -320,16 +453,36 @@ impl InputArea<'_> {
                     self.input.input(event);
                     return UserAction::Nope;
                 }
-                
+
+                // Tab to select current suggestion
+                if let Some(idx) = self.suggestion_index {
+                    if let Some(file_path) = self.file_suggestions.get(idx).cloned() {
+                        self.replace_file_search(&file_path);
+                    }
+                    return UserAction::Nope;
+                }
+                // Clear suggestions on Enter so message can be sent
+                self.file_suggestions.clear();
+                self.suggestion_index = None;
+                self.suggestion_search = None;
+
                 // Regular Enter - set pending and wait
                 self.pending_enter = Some(now);
                 return UserAction::Nope;
             }
             KeyCode::Up => {
+                // If we have suggestions, navigate through them
+                if !self.file_suggestions.is_empty() {
+                    if let Some(idx) = self.suggestion_index {
+                        self.suggestion_index = Some(if idx > 0 { idx - 1 } else { self.file_suggestions.len() - 1 });
+                    }
+                    return UserAction::Nope;
+                }
+
                 // Get current cursor position
                 let (cursor_row, _) = self.input.cursor();
                 let is_empty = self.input.lines().iter().all(|line| line.is_empty());
-                
+
                 // Navigate history only if:
                 // 1. Input is empty, OR
                 // 2. Cursor is at the first line
@@ -338,7 +491,7 @@ impl InputArea<'_> {
                         let current_text = self.input.lines().join("\n");
                         self.current_draft = Some(current_text);
                     }
-                    
+
                     self.history_index -= 1;
                     self.load_historic_prompt(self.history_index);
                 } else if !is_empty && cursor_row > 0 {
@@ -346,11 +499,19 @@ impl InputArea<'_> {
                 }
             }
             KeyCode::Down => {
+                // If we have suggestions, navigate through them
+                if !self.file_suggestions.is_empty() {
+                    if let Some(idx) = self.suggestion_index {
+                        self.suggestion_index = Some((idx + 1) % self.file_suggestions.len());
+                    }
+                    return UserAction::Nope;
+                }
+
                 // Get current cursor position
                 let (cursor_row, _) = self.input.cursor();
                 let is_empty = self.input.lines().iter().all(|line| line.is_empty());
                 let line_count = self.input.lines().len();
-                
+
                 // Navigate history only if:
                 // 1. Cursor is at the last line
                 if !self.history.is_empty() && (is_empty || cursor_row == line_count - 1) {
@@ -380,7 +541,40 @@ impl InputArea<'_> {
                 self.input.input(input);
             }
         }
+
+        // Update suggestions after each keystroke
+        self.update_suggestions();
+
         UserAction::Nope
+    }
+
+    // Replace @search with the file path
+    fn replace_file_search(&mut self, file_path: &str) {
+        if let Some((at_pos, search_text)) = self.detect_file_search() {
+            let (row, _) = self.input.cursor();
+
+            // Calculate how many characters to delete (@ + search text)
+            let chars_to_delete = 1 + search_text.len(); // @ + text after
+
+            // Move cursor to @ position
+            self.input.move_cursor(tui_textarea::CursorMove::Head);
+            for _ in 0..at_pos {
+                self.input.move_cursor(tui_textarea::CursorMove::Forward);
+            }
+
+            // Delete @ + search text
+            for _ in 0..chars_to_delete {
+                self.input.delete_next_char();
+            }
+
+            // Insert file path
+            self.input.insert_str(file_path);
+
+            // Reset suggestions
+            self.file_suggestions.clear();
+            self.suggestion_index = None;
+            self.suggestion_search = None;
+        }
     }
 }
 
@@ -388,16 +582,28 @@ impl InputArea<'_> {
 /// drawing logic
 impl InputArea<'_> {
     pub fn height(&self) -> u16 {
-        // +2 for top/bottom borders  
+        // +2 for top/bottom borders
         // +N for lines inside input
         // +1 for helper text below input
-        self.input.lines().len().max(1) as u16 + 4 + self.help.as_ref().map_or(0, |h| h.height())
+        let suggestions_height = if !self.file_suggestions.is_empty() {
+            self.file_suggestions.len().min(5) as u16 + 2
+        } else {
+            0
+        };
+        self.input.lines().len().max(1) as u16 + 4 + self.help.as_ref().map_or(0, |h| h.height()) + suggestions_height
     }
 
     pub fn draw(&mut self, f: &mut Frame, area: Rect) {
-        let [status, input_area, helper, help_area] = Layout::vertical([
+        let suggestions_height = if !self.file_suggestions.is_empty() {
+            self.file_suggestions.len().min(5) as u16 + 2
+        } else {
+            0
+        };
+
+        let [status, input_area, suggestions_area, helper, help_area] = Layout::vertical([
             Constraint::Length(1),
-            Constraint::Length(self.height() - 2), 
+            Constraint::Length(self.height() - 2 - suggestions_height),
+            Constraint::Length(suggestions_height),
             Constraint::Length(1),
             Constraint::Length(self.help.as_ref().map_or(0, |h| h.height()))
         ]).areas(area);
@@ -446,6 +652,53 @@ impl InputArea<'_> {
             Span::styled(self.method_str(), Style::default().fg(Color::DarkGray)), 
             helper_right
         );
+
+        // File suggestions
+        if !self.file_suggestions.is_empty() {
+            let max_visible = 5;
+            let total = self.file_suggestions.len();
+            let selected = self.suggestion_index.unwrap_or(0);
+            
+            // Calculate scrolling window
+            let start = if total <= max_visible {
+                0
+            } else {
+                // Center the selected item in the window when possible
+                let ideal_start = selected.saturating_sub(max_visible / 2);
+                ideal_start.min(total.saturating_sub(max_visible))
+            };
+            
+            let end = (start + max_visible).min(total);
+            
+            let items: Vec<ListItem> = self.file_suggestions[start..end]
+                .iter()
+                .enumerate()
+                .map(|(window_idx, path)| {
+                    let actual_idx = start + window_idx;
+                    let style = if Some(actual_idx) == self.suggestion_index {
+                        Style::default().fg(Color::Yellow).bg(Color::DarkGray)
+                    } else {
+                        Style::default().fg(Color::White)
+                    };
+                    ListItem::new(path.as_str()).style(style)
+                })
+                .collect();
+
+            let title = if total > max_visible {
+                format!("Files ({}/{})", selected + 1, total)
+            } else {
+                "Files".to_string()
+            };
+
+            let suggestions_list = List::new(items)
+                .block(Block::default()
+                    .borders(Borders::ALL)
+                    .border_set(border::ROUNDED)
+                    .border_style(Style::default().fg(Color::DarkGray))
+                    .title(title));
+
+            f.render_widget(suggestions_list, suggestions_area);
+        }
 
         // help
         if let Some(help) = &self.help {
