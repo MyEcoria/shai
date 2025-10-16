@@ -146,7 +146,7 @@ impl AgentBuilder {
         // Add builtin tools based on config
         let builtin_tools_to_add = if config.tools.builtin.contains(&"*".to_string()) {
             // Add all builtin tools
-            vec!["bash", "edit", "multiedit", "fetch", "find", "ls", "read", "todo_read", "todo_write", "write"]
+            vec!["bash", "edit", "multiedit", "fetch", "search", "ls", "read", "todo_read", "todo_write", "write"]
         } else {
             // Add only specified tools
             config.tools.builtin.iter().map(|s| s.as_str()).collect()

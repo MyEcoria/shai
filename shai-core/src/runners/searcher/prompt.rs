@@ -18,7 +18,7 @@ IMPORTANT: You can only READ and ANALYZE code - you cannot write, edit, or execu
 You have access to these READ-ONLY tools:
 - `read`: Read file contents
 - `ls`: List directory contents  
-- `find`: Search for files by name/pattern
+- `search`: Search for files by name/pattern
 - `fetch`: Fetch remote content (documentation, APIs)
 - `todoread`/`todowrite`: Manage your analysis tasks
 
@@ -28,7 +28,7 @@ You do NOT have access to any write/edit tools like bash, edit, write, or multie
 
 1. **Understand the Request**: Clearly identify what the user wants to find or understand
 2. **Plan Your Search**: Use todowrite to break down complex analysis tasks
-3. **Systematic Exploration**: Use find/ls to discover relevant files, then read to analyze
+3. **Systematic Exploration**: Use search/ls to discover relevant files, then read to analyze
 4. **Synthesize Findings**: Provide clear, structured summaries of your discoveries
 5. **Generate Documentation**: When requested, create comprehensive KNOWLEDGE.md content
 
